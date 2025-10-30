@@ -27,7 +27,7 @@ LangGraph Studio / CLI
   - `ollama_deep_researcher` – the single-path research loop (default).
   - `deep_researcher_dtor` – the Deep Tree of Research orchestrator.
   - `code_improvement_researcher` – ML code audit workflow that embeds the research graph.
-- **Batch / CLI** scripts (`dtor_orchestration/` and `run_batch.py`) wrap the same graphs with SQLite checkpoints so long-running jobs can be resumed or scheduled on SLURM-style clusters.
+- **Batch / CLI** scripts (`dtor_orchestration_cs_cluster/` for CS cluster, `dtor_orchestration_dsi_cluster/` for DSI cluster, and `run_batch.py`) wrap the same graphs with SQLite checkpoints so long-running jobs can be resumed or scheduled on SLURM-style clusters.
 
 ### Key Modules
 - `configuration.py` – central Pydantic schema that merges environment variables, Studio overrides, and code defaults. Enforces modality validation (`enable_fet_raw_data`, `enable_code_retrieval`, `enable_paper_retrieval`) and guarantees OpenAI credentials when `llm_provider="openai"`.

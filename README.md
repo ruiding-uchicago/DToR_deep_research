@@ -36,8 +36,13 @@ Documentation lives under [`docs/`](docs). Start with:
   ```
   Outputs stream to stdout and are saved in `synthesis_branches_and_final/` plus `logs/`.
 - **Cluster orchestration:**
-  - `dtor_orchestration/run_batch_cluster.py` runs DToR with SQLite checkpoints, wall-time awareness, and signal hooks for SLURM/PBS.
-  - `dtor_orchestration/run_diversify_only.py` (Stage 1) precomputes perspectives so later jobs can focus on branch execution.
+  - **DToR mode (multi-branch research):**
+    - `dtor_orchestration_cs_cluster/run_batch_cluster.py` runs DToR with SQLite checkpoints, wall-time awareness, and signal hooks for SLURM/PBS (CS cluster).
+    - `dtor_orchestration_dsi_cluster/run_batch_cluster.py` runs DToR on the DSI cluster with appropriate partition and environment settings.
+    - `dtor_orchestration_*/run_diversify_only.py` (Stage 1) precomputes perspectives so later jobs can focus on branch execution.
+  - **Single mode (parallel simple research):**
+    - `single_cs_cluster/submit_all_single_parallel.sh` submits multiple topics as independent single-mode jobs (CS cluster).
+    - `single_cs_cluster/submit_single_topic.sh` runs one topic in single mode (no checkpointing, faster execution).
   Both respect the same `.env` used locally—prototype in Studio, ship to the cluster with the same settings.
 
 ## Configuration cheat sheet 🧭
@@ -74,7 +79,9 @@ src/ollama_deep_researcher/
   prompts.py            # Prompt templates (single + FET-specific)
   lmstudio.py, openai_wrapper.py  # Model wrappers
 run_batch.py            # Headless CLI entrypoint
-dtor_orchestration/      # Cluster orchestration scripts
+dtor_orchestration_cs_cluster/   # CS cluster DToR orchestration (yuxinchen-contrib partition)
+dtor_orchestration_dsi_cluster/  # DSI cluster DToR orchestration (ai+s partition)
+single_cs_cluster/      # CS cluster single-mode parallel jobs
 auto_continue.py        # Studio auto-click helper for long DToR runs
 docs/                   # Deep-dive documentation
 ```

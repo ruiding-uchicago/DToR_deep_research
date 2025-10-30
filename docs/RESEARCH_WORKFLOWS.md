@@ -83,13 +83,13 @@ Set these in `.env`, pass `-c key value` overrides on the CLI, or adjust via Lan
 ### Running DToR
 - Studio: set `research_mode` to `"dtor"` and watch the tree evolve in the UI.
 - CLI: `python run_batch.py "topic" -c research_mode dtor`.
-- Cluster mode: `dtor_orchestration/run_batch_cluster.py` supports staged execution (`run_diversify_only.py` for Stage 1 and SLURM-friendly wall-time checkpoints).
+- Cluster mode: `dtor_orchestration_cs_cluster/run_batch_cluster.py` (CS cluster) or `dtor_orchestration_dsi_cluster/run_batch_cluster.py` (DSI cluster) supports staged execution (`run_diversify_only.py` for Stage 1 and SLURM-friendly wall-time checkpoints).
 
 ### Logging and Checkpointing
 - `setup_logging()` in `dtor_nodes` creates per-run log files (analysis, query generation, routing, finalisation, reflection) under `logs/`. The same helper is reused by single-path runs for consistency.
 - `graph.step_timeout = 86400` on all compiled graphs to prevent LangGraph from cancelling multi-hour research automatically.
-- `dtor_orchestration/run_batch_cluster.py` provides wall-time aware execution: it tracks topics, monitors signals (`SIGUSR1` checkpoint, `SIGUSR2` status), and gracefully terminates before SLURM/PBS limits via `grace_period_minutes`.
-- `dtor_orchestration/run_diversify_only.py` supports staging: first diversify to produce perspectives, then later jobs run Stage 2/3 against stored branches.
+- `dtor_orchestration_cs_cluster/run_batch_cluster.py` (CS cluster) and `dtor_orchestration_dsi_cluster/run_batch_cluster.py` (DSI cluster) provide wall-time aware execution: they track topics, monitor signals (`SIGUSR1` checkpoint, `SIGUSR2` status), and gracefully terminate before SLURM/PBS limits via `grace_period_minutes`.
+- `dtor_orchestration_*/run_diversify_only.py` supports staging: first diversify to produce perspectives, then later jobs run Stage 2/3 against stored branches.
 
 ## Additional Workflows
 
@@ -108,8 +108,13 @@ This demonstrates how other applications can embed `graph` or the DToR subgraph 
 - **Headless / CLI**:
   ```bash
   python run_batch.py "topic" -c research_mode dtor -c max_web_research_loops 4
-  python dtor_orchestration/run_batch_cluster.py --topics-file research_topics.txt --wall-time 3.5
+
+  # CS cluster (yuxinchen-contrib partition)
+  python dtor_orchestration_cs_cluster/run_batch_cluster.py --topics-file research_topics.txt --wall-time 3.5
+
+  # DSI cluster (ai+s partition)
+  python dtor_orchestration_dsi_cluster/run_batch_cluster.py --topics-file research_topics.txt --wall-time 3.5
   ```
-  Both commands honour `.env` defaults and accept `-c key value` overrides.
+  All commands honour `.env` defaults and accept `-c key value` overrides.
 
 Refer to `docs/MODALITY_RAG.md` for a detailed breakdown of modality retrieval and to `docs/SYSTEM_OVERVIEW.md` for module-level architecture.
