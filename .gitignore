@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environments
+.env
+.env_backup
+.venv/
+venv/
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+.ipynb_checkpoints/
+
+# Build / dist
+dist/
+build/
+*.egg-info/
+
+# App runtime artifacts
+logs/
+synthesis_branches_and_final/
+checkpoints.sqlite
+.langgraph_api/
+code_improvement_output/
+code_revision_inputs/
+
+# Misc
+recursion_limit.txt
+working_versions.txt
