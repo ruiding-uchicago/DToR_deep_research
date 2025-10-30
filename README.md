@@ -85,3 +85,5 @@ MIT — see [`LICENSE`](LICENSE).
 ## Thanks
 - Built with LangGraph/LangChain and a collection of community search libraries.
 - Contributions that improve stability, docs, or new modalities are welcome!
+
+<sub><i>This work is partially inspired by <a href="https://github.com/langchain-ai/local-deep-researcher">langchain-ai/local-deep-researcher</a>.</i></sub>
