@@ -73,7 +73,6 @@ def extract_node_name_from_event(event: dict) -> str:
 
 def should_skip_node(node_name: str, actual_node_name: str) -> bool:
     """Check if a node should be skipped (internal/technical nodes)."""
-    print("NODE NAME", node_name)
     # Skip if empty
     if not node_name and not actual_node_name:
         return True
@@ -173,6 +172,8 @@ async def on_message(message: cl.Message):
     try:
         final_result = None
         seen_nodes = set()  # Track nodes we've already shown to avoid duplicates
+        iteration_count = 0  # Track iteration number
+        current_iteration_nodes = []  # Track nodes in current iteration
 
         # Use astream_events with version="v2" to get structured events
         async for event in graph.astream_events(
@@ -199,8 +200,26 @@ async def on_message(message: cl.Message):
 
                     # Only show if we have a valid friendly name (not the default fallback for skipped nodes)
                     if friendly_name and not friendly_name.startswith("⚙️ Channelwrite"):
-                        # Send a progress message
+                        # Detect when we should start a new iteration
+                        should_start_iteration = (
+                            actual_node_name in ["research_node", "diversify_query", "generate_query"] and
+                            actual_node_name not in current_iteration_nodes
+                        )
+
+                        if should_start_iteration:
+                            # If we have nodes from previous iteration, we could summarize them here
+                            if current_iteration_nodes:
+                                pass  # Previous iteration completed
+
+                            # Start a new iteration
+                            iteration_count += 1
+                            iteration_header = f"### 🔄 Research Iteration {iteration_count}"
+                            await cl.Message(content=iteration_header).send()
+                            current_iteration_nodes = []
+
+                        # Send node message nested under iteration
                         await cl.Message(content=f"**{friendly_name}**").send()
+                        current_iteration_nodes.append(actual_node_name)
 
             # Filter for node end events to get final result
             elif event_type == "on_chain_end":
