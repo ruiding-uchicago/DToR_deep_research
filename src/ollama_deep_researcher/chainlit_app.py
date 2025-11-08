@@ -15,6 +15,39 @@ from ollama_deep_researcher.dtor_state import DToRStateInput, DToRStateOutput
 # Set recursion limit constant
 RECURSION_LIMIT = 500
 
+# Mapping of node names to user-friendly descriptions
+NODE_DESCRIPTIONS = {
+    # Main graph nodes
+    "init_session": "🔧 Initializing research session",
+    "single_path": "🔍 Starting single-path research",
+    "dtor_mode": "🌳 Starting Deep Tree of Research",
+
+    # DToR graph nodes
+    "diversify_query": "💡 Diversifying initial research query",
+    "select_next_branch": "🌿 Selecting next research branch",
+    "analyze_research": "📊 Analyzing research findings",
+    "generate_queries": "❓ Generating follow-up research queries",
+    "research_node": "🔬 Conducting research on current topic",
+    "synthesize_branch": "📝 Synthesizing branch findings",
+    "synthesize_final": "✨ Creating final research synthesis",
+
+    # Single research graph nodes
+    "generate_query": "💭 Generating research query",
+    "local_rag_research": "📚 Searching local knowledge base",
+    "summarize_local_rag_results": "📄 Summarizing local research",
+    "generate_complementary_query": "🔄 Generating complementary query",
+    "web_research": "🌐 Searching the web",
+    "complementary_web_research": "🌐 Conducting complementary web search",
+    "summarize_sources": "📋 Summarizing research sources",
+    "reflect_on_summary": "🤔 Reflecting on research quality",
+    "finalize_summary": "✅ Finalizing research summary",
+}
+
+
+def get_friendly_name(node_name: str) -> str:
+    """Get user-friendly name for a node, or return formatted version of the name."""
+    return NODE_DESCRIPTIONS.get(node_name, f"⚙️ {node_name.replace('_', ' ').title()}")
+
 
 @cl.on_chat_start
 async def on_chat_start():
@@ -91,8 +124,23 @@ async def on_message(message: cl.Message):
             config=research_config,
             version="v2"
         ):
-            # Filter for graph end events to get the final result
-            if event.get("event") == "on_chain_end":
+            event_type = event.get("event")
+            node_name = event.get("name", "")
+
+            # Filter for node start events to show progress
+            if event_type == "on_chain_start":
+                if node_name and node_name not in ["__start__", "__end__"]:
+                    # Only show if it's a new step
+                    if current_step != node_name:
+                        current_step = node_name
+                        friendly_name = get_friendly_name(node_name)
+
+                        # Send a progress message
+                        await cl.Message(content=f"**{friendly_name}**").send()
+
+            # Filter for node end events to get final result
+            elif event_type == "on_chain_end":
+                # Check if this is the final output
                 data = event.get("data", {})
                 output = data.get("output")
 
@@ -103,16 +151,6 @@ async def on_message(message: cl.Message):
                     final_result = output
                 elif isinstance(output, dict) and 'final_summary' in output:
                     final_result = DToRStateOutput(**output) if isinstance(output, dict) else output
-
-            # Filter for node start/end events to show progress
-            elif event.get("event") == "on_chain_start":
-                name = event.get("name", "")
-                if name and name not in ["__start__", "__end__"]:
-                    # Show which node is executing
-                    if current_step != name:
-                        current_step = name
-                        # Optionally show step progress (uncomment if desired)
-                        # await cl.Message(content=f"Executing: {name}").send()
 
         # Display the final summary
         if final_result:
