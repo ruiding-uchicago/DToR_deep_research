@@ -73,6 +73,7 @@ def extract_node_name_from_event(event: dict) -> str:
 
 def should_skip_node(node_name: str, actual_node_name: str) -> bool:
     """Check if a node should be skipped (internal/technical nodes)."""
+    print("NODE NAME", node_name)
     # Skip if empty
     if not node_name and not actual_node_name:
         return True
@@ -95,6 +96,10 @@ def should_skip_node(node_name: str, actual_node_name: str) -> bool:
 
     # Skip if it's a ChannelWrite with incomplete info (like "Channelwrite<...>")
     if "channelwrite" in node_name.lower() and ("<..." in node_name or "..." in node_name):
+        return True
+
+    # Skip for LangGraph and write
+    if "LangGraph" == node_name or "_write" == node_name:
         return True
 
     return False
