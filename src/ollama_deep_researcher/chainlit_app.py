@@ -10,7 +10,10 @@ from langchain.schema.runnable.config import RunnableConfig
 from langchain_core.messages import HumanMessage
 
 from ollama_deep_researcher.dtor_graph import create_main_graph
-from ollama_deep_researcher.dtor_state import DToRStateInput
+from ollama_deep_researcher.dtor_state import DToRStateInput, DToRStateOutput
+
+# Set recursion limit constant
+RECURSION_LIMIT = 500
 
 
 @cl.on_chat_start
@@ -68,50 +71,64 @@ async def on_message(message: cl.Message):
         mode=mode
     )
 
-    # Create callback handler for streaming
-    cb = cl.LangchainCallbackHandler()
+    # Configure the runnable config - no callback handler to avoid LangSmith conflicts
+    research_config = RunnableConfig(
+        configurable={"thread_id": cl.context.session.id},
+        recursion_limit=RECURSION_LIMIT
+    )
 
     # Create a message to stream the final answer
     final_answer = cl.Message(content="")
 
-    # Configure the runnable config with callbacks
-    config = RunnableConfig(
-        callbacks=[cb],
-        configurable={"thread_id": cl.context.session.id}
-    )
-
-    # Stream the graph execution
+    # Stream the graph execution using astream_events
     try:
-        # Stream messages from the graph
-        async for event in graph.astream(
-            input_state,
-            config=config,
-            stream_mode="messages"
-        ):
-            # Check if this is a final output message
-            if hasattr(event, 'content') and event.content:
-                # Only stream content from final nodes to avoid duplication
-                # The callback handler will show intermediate steps
-                pass
+        final_result = None
+        current_step = None
 
-        # Get the final result by invoking the graph
-        final_result = await graph.ainvoke(
+        # Use astream_events with version="v2" to get structured events
+        async for event in graph.astream_events(
             input_state,
-            config=config
-        )
+            config=research_config,
+            version="v2"
+        ):
+            # Filter for graph end events to get the final result
+            if event.get("event") == "on_chain_end":
+                data = event.get("data", {})
+                output = data.get("output")
+
+                # Check if this is the final output (DToRStateOutput)
+                if isinstance(output, DToRStateOutput):
+                    final_result = output
+                elif hasattr(output, 'final_summary'):
+                    final_result = output
+                elif isinstance(output, dict) and 'final_summary' in output:
+                    final_result = DToRStateOutput(**output) if isinstance(output, dict) else output
+
+            # Filter for node start/end events to show progress
+            elif event.get("event") == "on_chain_start":
+                name = event.get("name", "")
+                if name and name not in ["__start__", "__end__"]:
+                    # Show which node is executing
+                    if current_step != name:
+                        current_step = name
+                        # Optionally show step progress (uncomment if desired)
+                        # await cl.Message(content=f"Executing: {name}").send()
 
         # Display the final summary
-        if hasattr(final_result, 'final_summary') and final_result.final_summary:
-            await final_answer.stream_token(f"\n\n## Final Research Summary\n\n{final_result.final_summary}")
+        if final_result:
+            if hasattr(final_result, 'final_summary') and final_result.final_summary:
+                await final_answer.stream_token(f"## Final Research Summary\n\n{final_result.final_summary}")
 
-        # Display sources if available
-        if hasattr(final_result, 'all_sources') and final_result.all_sources:
-            sources_text = "\n\n## Sources\n\n"
-            for i, source in enumerate(final_result.all_sources[:10], 1):  # Limit to first 10 sources
-                sources_text += f"{i}. {source}\n"
-            await final_answer.stream_token(sources_text)
+            # Display sources if available
+            if hasattr(final_result, 'all_sources') and final_result.all_sources:
+                sources_text = "\n\n## Sources\n\n"
+                for i, source in enumerate(final_result.all_sources[:10], 1):
+                    sources_text += f"{i}. {source}\n"
+                await final_answer.stream_token(sources_text)
 
-        await final_answer.send()
+            await final_answer.send()
+        else:
+            await cl.Message(content="Research completed, but no final summary was generated.").send()
 
     except Exception as e:
         error_msg = f"Error during research execution: {str(e)}"
