@@ -233,7 +233,7 @@ async def on_message(message: cl.Message):
 
                     # If we're starting a new iteration, display the previous iteration's summary
                     if should_start_iteration and iteration_count > 0 and current_iteration_summary:
-                        summary_message = f"  📝 **Iteration Summary:**\n  {current_iteration_summary[:500]}..." if len(current_iteration_summary) > 500 else f"  📝 **Iteration Summary:**\n  {current_iteration_summary}"
+                        summary_message = f"  📝 **Iteration Summary:**\n  {current_iteration_summary}"
                         await cl.Message(content=summary_message).send()
                         iteration_summaries[iteration_count] = current_iteration_summary
                         current_iteration_summary = None
