@@ -6,6 +6,7 @@ Users can input research topics and select between single-path or DToR modes.
 """
 
 import chainlit as cl
+import re
 from langchain.schema.runnable.config import RunnableConfig
 from langchain_core.messages import HumanMessage
 
@@ -46,7 +47,28 @@ NODE_DESCRIPTIONS = {
 
 def get_friendly_name(node_name: str) -> str:
     """Get user-friendly name for a node, or return formatted version of the name."""
+    # Clean up node name - handle cases like "Channelwrite<...,Node Name>"
+    if "Channelwrite" in node_name or "ChannelWrite" in node_name:
+        # Extract node name from ChannelWrite format: "Channelwrite<...,Node Name>"
+        match = re.search(r'[,\s]+([A-Za-z_][A-Za-z0-9_\s]+)', node_name)
+        if match:
+            extracted_name = match.group(1).strip().lower().replace(' ', '_')
+            return NODE_DESCRIPTIONS.get(extracted_name, f"⚙️ {extracted_name.replace('_', ' ').title()}")
+
     return NODE_DESCRIPTIONS.get(node_name, f"⚙️ {node_name.replace('_', ' ').title()}")
+
+
+def extract_node_name_from_event(event: dict) -> str:
+    """Extract the actual node name from various event formats."""
+    node_name = event.get("name", "")
+
+    # Handle ChannelWrite format: "Channelwrite<...,Node Name>"
+    if "Channelwrite" in node_name or "ChannelWrite" in node_name:
+        match = re.search(r'[,\s]+([A-Za-z_][A-Za-z0-9_\s]+)', node_name)
+        if match:
+            return match.group(1).strip().lower().replace(' ', '_')
+
+    return node_name
 
 
 @cl.on_chat_start
@@ -116,7 +138,7 @@ async def on_message(message: cl.Message):
     # Stream the graph execution using astream_events
     try:
         final_result = None
-        current_step = None
+        seen_nodes = set()  # Track nodes we've already shown to avoid duplicates
 
         # Use astream_events with version="v2" to get structured events
         async for event in graph.astream_events(
@@ -127,13 +149,17 @@ async def on_message(message: cl.Message):
             event_type = event.get("event")
             node_name = event.get("name", "")
 
+            # Extract the actual node name (handles ChannelWrite format)
+            actual_node_name = extract_node_name_from_event(event)
+
             # Filter for node start events to show progress
             if event_type == "on_chain_start":
-                if node_name and node_name not in ["__start__", "__end__"]:
-                    # Only show if it's a new step
-                    if current_step != node_name:
-                        current_step = node_name
-                        friendly_name = get_friendly_name(node_name)
+                # Skip internal nodes
+                if actual_node_name and actual_node_name not in ["__start__", "__end__"]:
+                    # Only show if we haven't seen this node yet (avoid duplicates from ChannelWrite)
+                    if actual_node_name not in seen_nodes:
+                        seen_nodes.add(actual_node_name)
+                        friendly_name = get_friendly_name(actual_node_name)
 
                         # Send a progress message
                         await cl.Message(content=f"**{friendly_name}**").send()
