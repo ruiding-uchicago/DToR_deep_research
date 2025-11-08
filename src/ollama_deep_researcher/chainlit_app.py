@@ -62,6 +62,11 @@ def extract_node_name_from_event(event: dict) -> str:
     """Extract the actual node name from various event formats."""
     node_name = event.get("name", "")
 
+    # Handle nested graph names like "single_path > generate_query"
+    if " > " in node_name:
+        parts = node_name.split(" > ")
+        node_name = parts[-1]  # Take the leaf node name
+
     # Handle ChannelWrite format: "Channelwrite<...,Node Name>"
     if "Channelwrite" in node_name or "ChannelWrite" in node_name:
         match = re.search(r'[,\s]+([A-Za-z_][A-Za-z0-9_\s]+)', node_name)
@@ -171,13 +176,16 @@ async def on_message(message: cl.Message):
     # Stream the graph execution using astream_events
     try:
         final_result = None
-        seen_nodes = set()  # Track nodes we've already shown to avoid duplicates
+        seen_node_starts = set()  # Track node starts using run_id to prevent duplicates
         iteration_count = 0  # Track iteration number
         current_iteration_nodes = []  # Track nodes in current iteration
         in_initialization_phase = True  # Track if we're in the initialization phase
         initialization_header_sent = False  # Track if we've sent the initialization header
         iteration_summaries = {}  # Track summaries for each iteration
         current_iteration_summary = None  # Track current iteration's summary
+        previous_node_name = None  # Track previous node to detect transitions
+        route_research_completed = False  # Track when route_research completes
+        research_iteration_nodes = ["generate_query", "local_rag_research", "research_node", "diversify_query"]  # Nodes that indicate new iteration
 
         # Use astream_events with version="v2" to get structured events
         async for event in graph.astream_events(
@@ -188,7 +196,7 @@ async def on_message(message: cl.Message):
             event_type = event.get("event")
             node_name = event.get("name", "")
 
-            # Extract the actual node name (handles ChannelWrite format)
+            # Extract the actual node name (handles ChannelWrite format and nested graphs)
             actual_node_name = extract_node_name_from_event(event)
 
             # Filter for node start events to show progress
@@ -197,59 +205,78 @@ async def on_message(message: cl.Message):
                 if should_skip_node(node_name, actual_node_name):
                     continue
 
-                # Only show if we haven't seen this node yet (avoid duplicates from ChannelWrite)
-                if actual_node_name not in seen_nodes:
-                    seen_nodes.add(actual_node_name)
-                    friendly_name = get_friendly_name(actual_node_name)
+                # Use run_id for deduplication to handle nodes that appear multiple times
+                run_id = event.get("run_id", "")
+                event_key = f"{run_id}:{actual_node_name}:start"
+                if event_key in seen_node_starts:
+                    continue
+                seen_node_starts.add(event_key)
 
-                    # Only show if we have a valid friendly name (not the default fallback for skipped nodes)
-                    if friendly_name and not friendly_name.startswith("⚙️ Channelwrite"):
-                        # Detect when we should start a new iteration (marks end of initialization)
+                friendly_name = get_friendly_name(actual_node_name)
+
+                # Only show if we have a valid friendly name (not the default fallback for skipped nodes)
+                if friendly_name and not friendly_name.startswith("⚙️ Channelwrite"):
+                    # Detect when we should start a new iteration
+                    # New iteration starts when:
+                    # 1. First iteration: when we see generate_query or local_rag_research for the first time
+                    # 2. Subsequent iterations: when we see local_rag_research or generate_query after route_research has completed
+                    should_start_iteration = False
+                    if iteration_count == 0:
+                        # First iteration: start when we see the first research node
+                        should_start_iteration = actual_node_name in ["generate_query", "local_rag_research"]
+                    else:
+                        # Subsequent iterations: start when we see research nodes after route_research completed
                         should_start_iteration = (
-                            actual_node_name in ["research_node", "diversify_query", "generate_query"] and
-                            actual_node_name not in current_iteration_nodes
+                            route_research_completed and
+                            actual_node_name in ["local_rag_research", "generate_query"]
                         )
 
-                        # If we're starting a new iteration, display the previous iteration's summary
-                        if should_start_iteration and iteration_count > 0 and current_iteration_summary:
-                            summary_message = f"  📝 **Iteration Summary:**\n  {current_iteration_summary[:500]}..." if len(current_iteration_summary) > 500 else f"  📝 **Iteration Summary:**\n  {current_iteration_summary}"
-                            await cl.Message(content=summary_message).send()
-                            iteration_summaries[iteration_count] = current_iteration_summary
-                            current_iteration_summary = None
+                    # If we're starting a new iteration, display the previous iteration's summary
+                    if should_start_iteration and iteration_count > 0 and current_iteration_summary:
+                        summary_message = f"  📝 **Iteration Summary:**\n  {current_iteration_summary[:500]}..." if len(current_iteration_summary) > 500 else f"  📝 **Iteration Summary:**\n  {current_iteration_summary}"
+                        await cl.Message(content=summary_message).send()
+                        iteration_summaries[iteration_count] = current_iteration_summary
+                        current_iteration_summary = None
+                        route_research_completed = False  # Reset flag after starting new iteration
 
-                        # Send initialization header if this is the first node and we're still in initialization
-                        if in_initialization_phase and not initialization_header_sent:
-                            initialization_header = "### 🔧 Initialize Session"
-                            await cl.Message(content=initialization_header).send()
-                            initialization_header_sent = True
+                    # Send initialization header if this is the first node and we're still in initialization
+                    if in_initialization_phase and not initialization_header_sent:
+                        initialization_header = "### 🔧 Initialize Session"
+                        await cl.Message(content=initialization_header).send()
+                        initialization_header_sent = True
 
-                        # If we're starting an iteration, we've left the initialization phase
-                        if should_start_iteration and in_initialization_phase:
-                            in_initialization_phase = False
-                            current_iteration_nodes = []
+                    # If we're starting an iteration, we've left the initialization phase
+                    if should_start_iteration and in_initialization_phase:
+                        in_initialization_phase = False
+                        current_iteration_nodes = []
 
-                            # Start a new iteration
-                            iteration_count += 1
-                            iteration_header = f"### 🔄 Research Iteration {iteration_count}"
-                            await cl.Message(content=iteration_header).send()
-                            current_iteration_nodes = []
-                        elif should_start_iteration:
-                            # Start a new iteration (not the first one)
-                            current_iteration_nodes = []
+                        # Start a new iteration
+                        iteration_count += 1
+                        iteration_header = f"### 🔄 Research Iteration {iteration_count}"
+                        await cl.Message(content=iteration_header).send()
+                        current_iteration_nodes = []
+                    elif should_start_iteration:
+                        # Start a new iteration (not the first one)
+                        current_iteration_nodes = []
 
-                            iteration_count += 1
-                            iteration_header = f"### 🔄 Research Iteration {iteration_count}"
-                            await cl.Message(content=iteration_header).send()
-                            current_iteration_nodes = []
+                        iteration_count += 1
+                        iteration_header = f"### 🔄 Research Iteration {iteration_count}"
+                        await cl.Message(content=iteration_header).send()
+                        current_iteration_nodes = []
 
-                        # Send node message - nested under initialization or iteration
-                        # Add indentation to show it's a child of the section
-                        indented_node = f"  • {friendly_name}"
-                        await cl.Message(content=indented_node).send()
-                        current_iteration_nodes.append(actual_node_name)
+                    # Send node message - nested under initialization or iteration
+                    # Add indentation to show it's a child of the section
+                    indented_node = f"  • {friendly_name}"
+                    await cl.Message(content=indented_node).send()
+                    current_iteration_nodes.append(actual_node_name)
+                    previous_node_name = actual_node_name
 
             # Filter for node end events to get final result and capture summaries
             elif event_type == "on_chain_end":
+                # Track when route_research completes - this indicates a new iteration may start
+                if actual_node_name == "route_research":
+                    route_research_completed = True
+
                 # Extract state data to get summaries
                 data = event.get("data", {})
                 output = data.get("output")
