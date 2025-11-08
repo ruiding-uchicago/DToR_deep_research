@@ -71,6 +71,35 @@ def extract_node_name_from_event(event: dict) -> str:
     return node_name
 
 
+def should_skip_node(node_name: str, actual_node_name: str) -> bool:
+    """Check if a node should be skipped (internal/technical nodes)."""
+    # Skip if empty
+    if not node_name and not actual_node_name:
+        return True
+
+    # Skip internal LangGraph nodes
+    if actual_node_name in ["__start__", "__end__"]:
+        return True
+
+    # Skip ChannelWrite operations (internal state management)
+    if "channelwrite" in node_name.lower() or "channelwrite" in actual_node_name.lower():
+        return True
+
+    # Skip generic "Write" operations
+    if actual_node_name.lower() in ["write", "read"]:
+        return True
+
+    # Skip if the node name is just "..." or empty after extraction
+    if actual_node_name in ["", "...", "none"]:
+        return True
+
+    # Skip if it's a ChannelWrite with incomplete info (like "Channelwrite<...>")
+    if "channelwrite" in node_name.lower() and ("<..." in node_name or "..." in node_name):
+        return True
+
+    return False
+
+
 @cl.on_chat_start
 async def on_chat_start():
     """
@@ -154,13 +183,17 @@ async def on_message(message: cl.Message):
 
             # Filter for node start events to show progress
             if event_type == "on_chain_start":
-                # Skip internal nodes
-                if actual_node_name and actual_node_name not in ["__start__", "__end__"]:
-                    # Only show if we haven't seen this node yet (avoid duplicates from ChannelWrite)
-                    if actual_node_name not in seen_nodes:
-                        seen_nodes.add(actual_node_name)
-                        friendly_name = get_friendly_name(actual_node_name)
+                # Skip internal/technical nodes
+                if should_skip_node(node_name, actual_node_name):
+                    continue
 
+                # Only show if we haven't seen this node yet (avoid duplicates from ChannelWrite)
+                if actual_node_name not in seen_nodes:
+                    seen_nodes.add(actual_node_name)
+                    friendly_name = get_friendly_name(actual_node_name)
+
+                    # Only show if we have a valid friendly name (not the default fallback for skipped nodes)
+                    if friendly_name and not friendly_name.startswith("⚙️ Channelwrite"):
                         # Send a progress message
                         await cl.Message(content=f"**{friendly_name}**").send()
 
