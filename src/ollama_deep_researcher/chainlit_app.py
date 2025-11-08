@@ -176,6 +176,8 @@ async def on_message(message: cl.Message):
         current_iteration_nodes = []  # Track nodes in current iteration
         in_initialization_phase = True  # Track if we're in the initialization phase
         initialization_header_sent = False  # Track if we've sent the initialization header
+        iteration_summaries = {}  # Track summaries for each iteration
+        current_iteration_summary = None  # Track current iteration's summary
 
         # Use astream_events with version="v2" to get structured events
         async for event in graph.astream_events(
@@ -208,6 +210,13 @@ async def on_message(message: cl.Message):
                             actual_node_name not in current_iteration_nodes
                         )
 
+                        # If we're starting a new iteration, display the previous iteration's summary
+                        if should_start_iteration and iteration_count > 0 and current_iteration_summary:
+                            summary_message = f"  📝 **Iteration Summary:**\n  {current_iteration_summary[:500]}..." if len(current_iteration_summary) > 500 else f"  📝 **Iteration Summary:**\n  {current_iteration_summary}"
+                            await cl.Message(content=summary_message).send()
+                            iteration_summaries[iteration_count] = current_iteration_summary
+                            current_iteration_summary = None
+
                         # Send initialization header if this is the first node and we're still in initialization
                         if in_initialization_phase and not initialization_header_sent:
                             initialization_header = "### 🔧 Initialize Session"
@@ -217,9 +226,7 @@ async def on_message(message: cl.Message):
                         # If we're starting an iteration, we've left the initialization phase
                         if should_start_iteration and in_initialization_phase:
                             in_initialization_phase = False
-                            # If we have nodes from previous iteration, we could summarize them here
-                            if current_iteration_nodes:
-                                pass  # Previous iteration completed
+                            current_iteration_nodes = []
 
                             # Start a new iteration
                             iteration_count += 1
@@ -228,8 +235,7 @@ async def on_message(message: cl.Message):
                             current_iteration_nodes = []
                         elif should_start_iteration:
                             # Start a new iteration (not the first one)
-                            if current_iteration_nodes:
-                                pass  # Previous iteration completed
+                            current_iteration_nodes = []
 
                             iteration_count += 1
                             iteration_header = f"### 🔄 Research Iteration {iteration_count}"
@@ -242,19 +248,46 @@ async def on_message(message: cl.Message):
                         await cl.Message(content=indented_node).send()
                         current_iteration_nodes.append(actual_node_name)
 
-            # Filter for node end events to get final result
+            # Filter for node end events to get final result and capture summaries
             elif event_type == "on_chain_end":
-                # Check if this is the final output
+                # Extract state data to get summaries
                 data = event.get("data", {})
                 output = data.get("output")
+
+                # Try to extract summary from various state formats
+                summary = None
+
+                # Check for running_summary in SummaryState
+                if hasattr(output, 'running_summary') and output.running_summary:
+                    summary = output.running_summary
+                elif isinstance(output, dict):
+                    if 'running_summary' in output and output['running_summary']:
+                        summary = output['running_summary']
+                    elif 'branch_summary' in output and output['branch_summary']:
+                        summary = output['branch_summary']
+                    elif 'final_summary' in output and output['final_summary']:
+                        summary = output['final_summary']
+
+                # Update current iteration summary if we found one
+                # Priority: finalize_summary > synthesize_branch > summarize_sources
+                if summary and actual_node_name in ["finalize_summary", "synthesize_branch", "summarize_sources"]:
+                    current_iteration_summary = summary
 
                 # Check if this is the final output (DToRStateOutput)
                 if isinstance(output, DToRStateOutput):
                     final_result = output
+                    # Display last iteration summary if available
+                    if current_iteration_summary:
+                        summary_message = f"  📝 **Iteration Summary:**\n  {current_iteration_summary[:500]}..." if len(current_iteration_summary) > 500 else f"  📝 **Iteration Summary:**\n  {current_iteration_summary}"
+                        await cl.Message(content=summary_message).send()
                 elif hasattr(output, 'final_summary'):
                     final_result = output
                 elif isinstance(output, dict) and 'final_summary' in output:
-                    final_result = DToRStateOutput(**output) if isinstance(output, dict) else output
+                    # Only extract fields that DToRStateOutput accepts
+                    final_result = DToRStateOutput(
+                        final_summary=output.get('final_summary', ''),
+                        all_sources=output.get('all_sources', [])
+                    )
 
         # Display the final summary
         if final_result:
