@@ -5,10 +5,36 @@ This module provides a Chainlit UI for interacting with the DToR research graph.
 Users can input research topics and select between single-path or DToR modes.
 """
 
+import os
 import re
 from dataclasses import dataclass, field
 from typing import Optional, Set, Dict
 
+# Phoenix tracing setup MUST happen before any LangChain/LangGraph imports
+from ollama_deep_researcher.phoenix_setup import (
+    setup_phoenix,
+    get_phoenix_url,
+    is_phoenix_enabled
+)
+
+# Initialize Phoenix tracing if enabled
+PHOENIX_ENABLED = os.getenv("PHOENIX_ENABLED", "false").lower() == "true"
+phoenix_tracer = None
+phoenix_url = None
+
+if PHOENIX_ENABLED and is_phoenix_enabled():
+    phoenix_tracer = setup_phoenix()
+    phoenix_url = get_phoenix_url()
+    if phoenix_tracer:
+        print(f"✅ Phoenix tracing enabled. View traces at: {phoenix_url}")
+    else:
+        print("⚠️ Phoenix tracing requested but setup failed. Continuing without tracing...")
+        print("   Make sure Phoenix server is running: phoenix serve")
+elif PHOENIX_ENABLED:
+    print("⚠️ Phoenix tracing requested but Phoenix is not installed.")
+    print("   Install with: pip install arize-phoenix openinference-instrumentation-langchain")
+
+# Now import LangChain/LangGraph modules AFTER Phoenix is set up
 import chainlit as cl
 from langchain.schema.runnable.config import RunnableConfig
 
@@ -63,6 +89,7 @@ class ResearchSessionState:
     previous_node_name: Optional[str] = None
     route_research_completed: bool = False
     seen_node_starts: Set[str] = field(default_factory=set)
+    final_summary: Optional[str] = None  # Track final summary
 
 
 def extract_node_name_from_channelwrite(node_name: str) -> Optional[str]:
@@ -311,15 +338,52 @@ async def process_chain_end_event(
     if summary and actual_node_name in SUMMARY_NODES:
         state.current_iteration_summary = summary
 
-    # Extract final result
+    # Extract final result - also track final_summary in state
     final_result = extract_final_result(output)
-    if final_result and state.current_iteration_summary:
-        await display_iteration_summary(
-            state.iteration_count,
-            state.current_iteration_summary
-        )
+    if final_result:
+        # Store final summary in state for fallback
+        if hasattr(final_result, 'final_summary') and final_result.final_summary:
+            state.final_summary = final_result.final_summary
+        elif isinstance(final_result, dict) and 'final_summary' in final_result:
+            state.final_summary = final_result['final_summary']
+
+        # Display last iteration summary if available
+        if state.current_iteration_summary:
+            await display_iteration_summary(
+                state.iteration_count,
+                state.current_iteration_summary
+            )
 
     return final_result
+
+
+async def get_final_summary_fallback(
+    input_state: DToRStateInput,
+    research_config: RunnableConfig,
+    graph
+) -> Optional[DToRStateOutput]:
+    """Fallback to synchronous invocation if no summary was streamed.
+
+    If the event stream completes without producing a summary, this function
+    invokes the graph synchronously to retrieve the final result.
+    """
+    try:
+        final_result = graph.invoke(input_state, config=research_config)
+
+        # Extract final_summary from result
+        if isinstance(final_result, DToRStateOutput):
+            return final_result
+        elif hasattr(final_result, "final_summary"):
+            return final_result
+        elif isinstance(final_result, dict) and "final_summary" in final_result:
+            return DToRStateOutput(
+                final_summary=final_result.get("final_summary", ""),
+                all_sources=final_result.get("all_sources", [])
+            )
+    except Exception as e:
+        print(f"Warning: Fallback invocation failed: {e}")
+
+    return None
 
 
 @cl.on_chat_start
@@ -328,16 +392,20 @@ async def on_chat_start():
     graph = create_main_graph(checkpointer=None)
     cl.user_session.set("graph", graph)
 
-    await cl.Message(
-        content=(
-            "Welcome to the Deep Tree of Research assistant! 🚀\n\n"
-            "I can help you conduct deep research on any topic. You can choose between:\n"
-            "- **Single-path mode**: Fast, linear research\n"
-            "- **DToR mode**: Deep Tree of Research with multiple branches and perspectives\n\n"
-            "Just send me a research topic and optionally specify the mode "
-            "(e.g., 'Research quantum computing in dtor mode')."
-        )
-    ).send()
+    welcome_message = (
+        "Welcome to the Deep Tree of Research assistant! 🚀\n\n"
+        "I can help you conduct deep research on any topic. You can choose between:\n"
+        "- **Single-path mode**: Fast, linear research\n"
+        "- **DToR mode**: Deep Tree of Research with multiple branches and perspectives\n\n"
+        "Just send me a research topic and optionally specify the mode "
+        "(e.g., 'Research quantum computing in dtor mode')."
+    )
+
+    # Add Phoenix link if enabled
+    if phoenix_url and phoenix_tracer:
+        welcome_message += f"\n\n🔍 **Observability**: Traces are being collected. View them in [Phoenix]({phoenix_url})"
+
+    await cl.Message(content=welcome_message).send()
 
 
 @cl.on_message
@@ -388,13 +456,30 @@ async def on_message(message: cl.Message):
                 if result:
                     final_result = result
 
+        # If we have a final summary in state, use it
+        if state.final_summary and not final_result:
+            final_result = DToRStateOutput(
+                final_summary=state.final_summary,
+                all_sources=[]
+            )
+
         # Display final results
         if final_result:
             await display_final_results(final_result, final_answer)
         else:
-            await cl.Message(
-                content="Research completed, but no final summary was generated."
-            ).send()
+            # Fallback: try to get final result by invoking the graph
+            await final_answer.stream_token("\n\nRetrieving final results...\n")
+            final_result = await get_final_summary_fallback(
+                input_state,
+                research_config,
+                graph
+            )
+            if final_result:
+                await display_final_results(final_result, final_answer)
+            else:
+                await cl.Message(
+                    content="Research completed, but no final summary was generated."
+                ).send()
 
     except Exception as e:
         error_msg = f"Error during research execution: {str(e)}"
