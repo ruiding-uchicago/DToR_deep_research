@@ -25,6 +25,7 @@ dependencies = [
     "sentence-transformers==4.0.0",
     "chromadb==1.0.21",
     "peft==0.15.1",
+    "chainlit>=2.0.0",
 
 ]
 

@@ -32,6 +32,8 @@ checkpoints.sqlite
 .langgraph_api/
 code_improvement_output/
 code_revision_inputs/
+.chainlit/
+chainlit.md
 
 # Misc
 recursion_limit.txt
