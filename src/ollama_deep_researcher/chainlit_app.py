@@ -89,7 +89,8 @@ class ResearchSessionState:
     previous_node_name: Optional[str] = None
     route_research_completed: bool = False
     seen_node_starts: Set[str] = field(default_factory=set)
-    final_summary: Optional[str] = None  # Track final summary
+    final_summary: Optional[str] = None
+    displayed_iteration_summaries: Set[int] = field(default_factory=set)  # Track which iteration summaries have been displayed
 
 
 def extract_node_name_from_channelwrite(node_name: str) -> Optional[str]:
@@ -293,11 +294,14 @@ async def process_chain_start_event(
     should_start = should_start_new_iteration(state, actual_node_name)
 
     # Display previous iteration summary if starting new iteration
+    # Only display if we haven't already displayed it for this iteration
     if should_start and state.iteration_count > 0 and state.current_iteration_summary:
-        await display_iteration_summary(
-            state.iteration_count,
-            state.current_iteration_summary
-        )
+        if state.iteration_count not in state.displayed_iteration_summaries:
+            await display_iteration_summary(
+                state.iteration_count,
+                state.current_iteration_summary
+            )
+            state.displayed_iteration_summaries.add(state.iteration_count)
         state.iteration_summaries[state.iteration_count] = state.current_iteration_summary
         state.current_iteration_summary = None
         state.route_research_completed = False
@@ -338,6 +342,17 @@ async def process_chain_end_event(
     if summary and actual_node_name in SUMMARY_NODES:
         state.current_iteration_summary = summary
 
+        # If this is finalize_summary, display the iteration summary immediately
+        # (since it might be the last iteration and no new iteration will start)
+        if actual_node_name == "finalize_summary" and state.iteration_count > 0:
+            if state.iteration_count not in state.displayed_iteration_summaries:
+                await display_iteration_summary(
+                    state.iteration_count,
+                    state.current_iteration_summary
+                )
+                state.displayed_iteration_summaries.add(state.iteration_count)
+                state.iteration_summaries[state.iteration_count] = state.current_iteration_summary
+
     # Extract final result - also track final_summary in state
     final_result = extract_final_result(output)
     if final_result:
@@ -346,13 +361,6 @@ async def process_chain_end_event(
             state.final_summary = final_result.final_summary
         elif isinstance(final_result, dict) and 'final_summary' in final_result:
             state.final_summary = final_result['final_summary']
-
-        # Display last iteration summary if available
-        if state.current_iteration_summary:
-            await display_iteration_summary(
-                state.iteration_count,
-                state.current_iteration_summary
-            )
 
     return final_result
 
@@ -455,6 +463,17 @@ async def on_message(message: cl.Message):
                 result = await process_chain_end_event(event, state)
                 if result:
                     final_result = result
+
+        # After stream completes, display any remaining iteration summary
+        # This handles the case where the last iteration's summary wasn't displayed
+        if (state.current_iteration_summary and
+            state.iteration_count > 0 and
+            state.iteration_count not in state.displayed_iteration_summaries):
+            await display_iteration_summary(
+                state.iteration_count,
+                state.current_iteration_summary
+            )
+            state.displayed_iteration_summaries.add(state.iteration_count)
 
         # If we have a final summary in state, use it
         if state.final_summary and not final_result:
