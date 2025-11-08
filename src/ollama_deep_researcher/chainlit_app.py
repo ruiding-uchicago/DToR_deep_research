@@ -174,6 +174,8 @@ async def on_message(message: cl.Message):
         seen_nodes = set()  # Track nodes we've already shown to avoid duplicates
         iteration_count = 0  # Track iteration number
         current_iteration_nodes = []  # Track nodes in current iteration
+        in_initialization_phase = True  # Track if we're in the initialization phase
+        initialization_header_sent = False  # Track if we've sent the initialization header
 
         # Use astream_events with version="v2" to get structured events
         async for event in graph.astream_events(
@@ -200,13 +202,21 @@ async def on_message(message: cl.Message):
 
                     # Only show if we have a valid friendly name (not the default fallback for skipped nodes)
                     if friendly_name and not friendly_name.startswith("⚙️ Channelwrite"):
-                        # Detect when we should start a new iteration
+                        # Detect when we should start a new iteration (marks end of initialization)
                         should_start_iteration = (
                             actual_node_name in ["research_node", "diversify_query", "generate_query"] and
                             actual_node_name not in current_iteration_nodes
                         )
 
-                        if should_start_iteration:
+                        # Send initialization header if this is the first node and we're still in initialization
+                        if in_initialization_phase and not initialization_header_sent:
+                            initialization_header = "### 🔧 Initialize Session"
+                            await cl.Message(content=initialization_header).send()
+                            initialization_header_sent = True
+
+                        # If we're starting an iteration, we've left the initialization phase
+                        if should_start_iteration and in_initialization_phase:
+                            in_initialization_phase = False
                             # If we have nodes from previous iteration, we could summarize them here
                             if current_iteration_nodes:
                                 pass  # Previous iteration completed
@@ -216,8 +226,17 @@ async def on_message(message: cl.Message):
                             iteration_header = f"### 🔄 Research Iteration {iteration_count}"
                             await cl.Message(content=iteration_header).send()
                             current_iteration_nodes = []
+                        elif should_start_iteration:
+                            # Start a new iteration (not the first one)
+                            if current_iteration_nodes:
+                                pass  # Previous iteration completed
 
-                        # Send node message nested under iteration
+                            iteration_count += 1
+                            iteration_header = f"### 🔄 Research Iteration {iteration_count}"
+                            await cl.Message(content=iteration_header).send()
+                            current_iteration_nodes = []
+
+                        # Send node message - nested under initialization or iteration
                         await cl.Message(content=f"**{friendly_name}**").send()
                         current_iteration_nodes.append(actual_node_name)
 
