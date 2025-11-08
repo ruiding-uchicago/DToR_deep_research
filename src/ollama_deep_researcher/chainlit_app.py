@@ -237,7 +237,9 @@ async def on_message(message: cl.Message):
                             current_iteration_nodes = []
 
                         # Send node message - nested under initialization or iteration
-                        await cl.Message(content=f"**{friendly_name}**").send()
+                        # Add indentation to show it's a child of the section
+                        indented_node = f"  • {friendly_name}"
+                        await cl.Message(content=indented_node).send()
                         current_iteration_nodes.append(actual_node_name)
 
             # Filter for node end events to get final result
