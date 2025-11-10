@@ -34,8 +34,8 @@ class Config:
         "help": "String topic of research or a file path to a topic file",
         "short": "t"
     })
-    checkpoint: pathlib.Path = dataclasses.field(metadata={
-        "help": "Path to checkpoint file",
+    checkpoint: str = dataclasses.field(default="checkpoint.sqlite", metadata={
+        "help": "Name of checkpoint file to be stored in the research topic directory",
         "short": "c"
     })
     mode: str = dataclasses.field(default="single", metadata={
@@ -46,6 +46,10 @@ class Config:
     recursion_limit: int = dataclasses.field(default=500, metadata={
         "help": "Recursion limit for the research",
         "short": "r"
+    })
+    no_resume: bool = dataclasses.field(default=False, metadata={
+        "help": "Do not resume from checkpoint",
+        "short": "n"
     })
     out_dir: pathlib.Path = dataclasses.field(default=pathlib.Path("output"), metadata={
         "help": "Output directory for the research",
@@ -108,19 +112,59 @@ def load_research_topic(research_topic: str) -> str:
     else:
         return research_topic
 
-def setup_output_dir(out_dir: pathlib.Path, research_topic: str,
-                     interim_reports_name: str = Config.INTERIM_REPORTS_NAME):
+def setup_data(out_dir: pathlib.Path, research_topic: str,
+               interim_reports_name: str = Config.INTERIM_REPORTS_NAME,
+               checkpoint_name: str = "checkpoint.sqlite") -> pathlib.Path:
     """Set the output directory for the research."""
     if not out_dir.exists():
         out_dir.mkdir(parents=True, exist_ok=True)
 
+    research_topic = research_topic[:10].replace(" ", "_") + "_" + datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     research_topic = out_dir.joinpath(research_topic)
     research_topic.mkdir(parents=True, exist_ok=True)
 
     interim_reports = research_topic.joinpath(interim_reports_name)
     interim_reports.mkdir(parents=True, exist_ok=True)
 
-    return research_topic
+    checkpoint = research_topic.joinpath("checkpoints", checkpoint_name)
+    checkpoint.parent.mkdir(parents=True, exist_ok=True)
+    checkpoint.touch(exist_ok=True)
+
+    return research_topic, checkpoint
+
+def check_checkpoint_status(app, research_config):
+    """Check if a checkpoint exists and if we should resume from it."""
+    try:
+        state = app.get_state(research_config)
+
+        if state and state.values:
+            has_checkpoint = True
+            has_unfinished_work = state.next and len(state.next) > 0
+
+            if has_unfinished_work:
+                logging.info("="*60)
+                logging.info("CHECKPOINT FOUND - Can resume execution")
+                logging.info(f"Next nodes to execute: {state.next}")
+
+                # Log checkpoint state info
+                if hasattr(state.values, 'research_topic'):
+                    logging.info(f"Research topic: {state.values.research_topic}")
+                if hasattr(state.values, 'research_loop_count'):
+                    logging.info(f"Current iteration: {state.values.research_loop_count}")
+                if hasattr(state.values, 'running_summary') and state.values.running_summary:
+                    summary_preview = state.values.running_summary[:100]
+                    logging.info(f"Latest summary preview: {summary_preview}...")
+
+                return True, state
+            else:
+                logging.info("CHECKPOINT FOUND - Research appears complete")
+                return False, state
+        else:
+            logging.info("No checkpoint found - starting fresh")
+            return False, None
+    except Exception as e:
+        logging.warning(f"Error checking checkpoint: {e}. Starting fresh.")
+        return False, None
 
 def truncate_string(value, max_length=200):
     """Truncate a string to a maximum length."""
@@ -200,9 +244,8 @@ def write_interim_report(update: dict, out_dir: pathlib.Path, research_topic: st
 def write_final_report(update: dict, out_dir: pathlib.Path, research_topic: str):
     """Write a final report to the output directory."""
     final_summary = update.get("final_summary", "")
-    filename = f"final_report.md"
 
-    report_path = out_dir / Config.FINAL_REPORT_NAME / filename
+    report_path = out_dir / Config.FINAL_REPORT_NAME
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(final_summary)
 
@@ -211,26 +254,32 @@ def write_final_report(update: dict, out_dir: pathlib.Path, research_topic: str)
 def write_sources(sources: list, out_dir: pathlib.Path):
     """Write sources to the output directory."""
     sources.sort()
-    filename = f"sources.md"
 
-    report_path = out_dir / Config.SOURCES_NAME / filename
+    report_path = out_dir / Config.SOURCES_NAME
     with open(report_path, "w", encoding="utf-8") as f:
         f.write("\n".join(sources))
 
     logging.info(f"Wrote sources to {report_path}")
 
-def run_single_mode(research_topic: str, cfg: Config, research_topic_dir: pathlib.Path):
-    """Run the single-path research mode."""
-    with SqliteSaver.from_conn_string(cfg.checkpoint) as checkpointer:
+def run_single_mode(research_topic: str, research_topic_dir: pathlib.Path,
+                    checkpoint: str = "checkpoint.sqlite", resume: bool = True,
+                    recursion_limit: int = 500):
+    """Run the single-path research mode.
+
+    Args:
+        research_topic: The research topic to investigate
+        cfg: Configuration object
+        research_topic_dir: Output directory for reports
+        resume: If True, resume from checkpoint if available. If False, start fresh.
+    """
+    # FIX: Use cfg.checkpoint instead of cfg.research_topic
+    with SqliteSaver.from_conn_string(str(checkpoint)) as checkpointer:
 
         app = create_single_research_graph(checkpointer=checkpointer)
 
-        # Check if local RAG should be enabled based on environment or config
-        # If USE_LOCAL_RAG is not explicitly set, default to False for CLI
         use_local_rag = os.getenv("USE_LOCAL_RAG", "false").lower() == "true"
 
         # Generate a unique thread_id for checkpointing based on research topic
-        # This allows resuming the same research topic from checkpoints
         thread_id = f"research_{hashlib.md5(research_topic.encode()).hexdigest()[:12]}"
 
         research_config = RunnableConfig(
@@ -238,32 +287,61 @@ def run_single_mode(research_topic: str, cfg: Config, research_topic_dir: pathli
                 "thread_id": thread_id,
                 "use_local_rag": use_local_rag,
             },
-            recursion_limit=cfg.recursion_limit  # recursion_limit is a direct parameter, not in configurable
+            recursion_limit=recursion_limit
         )
 
         app.step_timeout = 86400  # 24 hours in seconds
 
+        # Check for existing checkpoint
+        should_resume, checkpoint_state = check_checkpoint_status(app, research_config)
+
+        if should_resume and resume:
+            logging.info("Resuming from checkpoint...")
+            input_state = None  # LangGraph loads state from checkpoint automatically
+        else:
+            if checkpoint_state and not resume:
+                logging.info("Checkpoint exists but --no-resume flag set. Starting fresh.")
+            logging.info("Starting new research session...")
+            input_state = {"research_topic": research_topic.strip()}
+
         sources = []
-        for update in app.stream({"research_topic": research_topic}, config=research_config, stream_mode="updates"):
+        # LangGraph automatically saves state to SQLite after each node execution
+        # This happens inside app.stream() - you don't need to call anything manually
+        for update in app.stream(
+            input_state,
+            config=research_config,
+            stream_mode="updates"
+        ):
             logging.info(f"GRAPH UPDATE: {truncate_update(update)}")
 
             if update.get("summarize_sources"):
-                write_interim_report(update.get("summarize_sources"), research_topic_dir, cfg.research_topic)
-            if update.get("final_summary"):
-                write_final_report(update.get("final_summary"), research_topic_dir, cfg.research_topic)
+                write_interim_report(update.get("summarize_sources"), research_topic_dir, research_topic)
 
+            if update.get("finalize_summary"):
+                final_update = update.get("finalize_summary", {})
+                if final_update.get("running_summary"):
+                    write_final_report({"final_summary": final_update.get("running_summary")}, research_topic_dir, research_topic)
+
+            # Collect sources from various nodes
             if update.get("web_research") or update.get("complementary_web_research") or update.get("local_rag_research"):
                 web_sources = update.get("web_research", {}).get("sources_gathered", [])
-                if web_sources: sources.extend(web_sources)
+                if web_sources and 'No sources found' not in web_sources:
+                    sources.extend(web_sources)
 
                 complementary_sources = update.get("complementary_web_research", {}).get("complementary_sources_gathered", [])
-                if complementary_sources: sources.extend(complementary_sources)
+                if complementary_sources:
+                    sources.extend(complementary_sources)
 
                 local_sources = update.get("local_rag_research", {}).get("local_sources_gathered", [])
-                if local_sources: sources.extend(local_sources)
+                if local_sources and 'No sources found' not in local_sources:
+                    sources.extend(local_sources)
 
-        write_sources(sources, research_topic_dir)
-        logging.info(f"Total sources: {len(sources)}")
+        # Write sources at the end
+        if sources:
+            write_sources(sources, research_topic_dir)
+            logging.info(f"Total sources collected: {len(sources)}")
+
+        logging.info("Research session completed. Checkpoint saved.")
 
 def run_tree_mode(cfg: Config):
     logging.info("Running in tree mode")
@@ -272,9 +350,9 @@ def run_tree_mode(cfg: Config):
 def main():
     cfg = get_args()
     research_topic = load_research_topic(cfg.research_topic)
-    research_topic_dir = setup_output_dir(cfg.out_dir, cfg.research_topic)
+    research_topic_dir, checkpoint = setup_data(cfg.out_dir, cfg.research_topic)
     if cfg.mode == "single":
-        run_single_mode(research_topic, cfg, research_topic_dir)
+        run_single_mode(research_topic, research_topic_dir, checkpoint, cfg.no_resume, cfg.recursion_limit)
     elif cfg.mode == "tree":
         run_tree_mode(cfg)
     else:

@@ -1605,7 +1605,7 @@ def create_single_research_graph(checkpointer: Optional[object] = None):
     builder.add_conditional_edges("reflect_on_summary", route_research)
     builder.add_edge("finalize_summary", END)
 
-    graph = builder.compile()
+    graph = builder.compile(checkpointer=checkpointer)
     return graph
 
 
