@@ -27,7 +27,7 @@ build/
 
 # App runtime artifacts
 logs/
-cluster_checkpoints/
+cluster_checkpoints/**/*.sqlite
 checkpoints.sqlite
 .langgraph_api/
 code_improvement_output/
