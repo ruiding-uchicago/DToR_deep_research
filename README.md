@@ -154,12 +154,11 @@ MIT — see [`LICENSE`](LICENSE).
 
 ```bash
 docker run --rm \
-    -v /Users/ntebaldi/Documents/ai+science/projects/data/dtor/checkpoints:/app/checkpoints \
-    -v /Users/ntebaldi/Documents/ai+science/projects/data/dtor/data:/app/output \
+    -v ./output:/app/output \
     -e USE_LOCAL_RAG=false \
     dtor-cli:latest \
     -m single \
-    -t "why do leaves change color in the fall" \
+    -t "<your research topic>" \
     -o /app/output
 ```
 
@@ -167,14 +166,13 @@ If Ollama runs on the host, `use host.docker.internal`:
 
 ```bash
 docker run --rm \
-    -v /Users/ntebaldi/Documents/ai+science/projects/data/dtor/checkpoints:/app/checkpoints \
-    -v /Users/ntebaldi/Documents/ai+science/projects/data/dtor/data:/app/output \
+    -v ./output:/app/output \
     --add-host=host.docker.internal:host-gateway \
     -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
     -e USE_LOCAL_RAG=false \
     dtor-cli:latest \
     -m single \
-    -t "why do leaves change color in the fall" \
+    -t "<your research topic>" \
     -o /app/output
 ```
 
@@ -187,6 +185,6 @@ docker run --rm \
 ```bash
 docker-compose run --rm dtor-cli \
   -m single \
-  -t "why do leaves change color in the fall" \
+  -t "<your research topic>" \
   -o /app/output
 ```

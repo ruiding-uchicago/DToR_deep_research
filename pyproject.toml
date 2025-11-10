@@ -53,6 +53,13 @@ fet_rag = [
     # Optional but recommended
     "tqdm>=4.60.0",
 ]
+docs = [
+    "jupyter-book>=1.0.0",
+    "sphinx>=7.0.0",
+    "myst-parser>=2.0.0",
+    "sphinx-book-theme>=1.0.0",
+    "sphinx-design>=0.5.0",
+]
 
 [build-system]
 requires = ["setuptools>=73.0.0", "wheel"]

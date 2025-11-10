@@ -51,6 +51,20 @@ Install with: `pip install -e '.[ui]'`
 | `arize-phoenix` | (latest) | Arize Phoenix observability platform |
 | `openinference-instrumentation-langchain` | (latest) | OpenInference instrumentation for LangChain |
 
+### Documentation Build (`docs`)
+
+Install with: `pip install -e '.[docs]'`
+
+| Package | Version Constraint | Description |
+|---------|-------------------|-------------|
+| `jupyter-book` | ==1.0.2 | Sphinx-based Jupyter Book release compatible with `_config.yml` / `_toc.yml` |
+| `sphinx` | >=7.0.0 | Core documentation engine |
+| `myst-parser` | >=2.0.0 | MyST Markdown parser used by Sphinx |
+| `sphinx-book-theme` | >=1.0.0 | Theme used for the documentation |
+| `sphinx-design` | >=0.5.0 | Design components (cards, tabs) |
+
+> `jupyter-book` is pinned to the last Sphinx-based release to avoid the new MyST Build pipeline (v2+) that requires a different project layout and triggers the `EISDIR` error when used with this book.
+
 ### FET RAG Support (`fet_rag`)
 
 Install with: `pip install -e '.[fet_rag]'`
@@ -125,4 +139,3 @@ pip freeze > requirements_full.txt
 - **Transitive dependencies**: Managed automatically by pip
 
 For production deployments, consider using `pip-tools` or `pip-compile` to generate fully pinned requirement files.
-

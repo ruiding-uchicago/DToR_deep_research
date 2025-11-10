@@ -6,7 +6,7 @@ services:
     image: dtor-cli:latest
     volumes:
       # Mount output directory to save reports
-      - /Users/ntebaldi/Documents/ai+science/projects/data/dtor/output:/app/output
+      - ./output:/app/output
       # Optional: mount research topics if you have them
       - ./research_topics:/app/research_topics:ro
     environment:
