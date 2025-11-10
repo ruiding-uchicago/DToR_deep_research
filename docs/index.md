@@ -62,9 +62,9 @@ pip install -e '.[dev,ui,fet_rag]'See the [Dependency List](dependency_list.md) 
 
 ## Getting Help
 
-- Check the [README](../README.md) for installation and basic usage
-- Review the [Troubleshooting](../README.md#troubleshooting-highlights) section
-- Explore the [examples](../examples/) directory for usage examples
+- Check the [README](https://github.com/ruiding-uchicago/DToR_deep_research/blob/main/README.md) for installation and basic usage
+- Review the [Troubleshooting](https://github.com/ruiding-uchicago/DToR_deep_research/blob/main/README.md#troubleshooting-highlights) section
+- Explore the [examples](https://github.com/ruiding-uchicago/DToR_deep_research/tree/feature/cli-package/examples) directory for usage examples
 
 ## Contributing
 
