@@ -94,3 +94,50 @@ MIT — see [`LICENSE`](LICENSE).
 - Contributions that improve stability, docs, or new modalities are welcome!
 
 <sub><i>This work is partially inspired by <a href="https://github.com/langchain-ai/local-deep-researcher">langchain-ai/local-deep-researcher</a>.</i></sub>
+
+# Docker Image
+
+## Docker
+
+1. Build the image: `docker build -t dtor-cli:latest .`
+
+2. Run the research task:
+
+```bash
+docker run --rm \
+    -v /Users/ntebaldi/Documents/ai+science/projects/data/dtor/checkpoints:/app/checkpoints \
+    -v /Users/ntebaldi/Documents/ai+science/projects/data/dtor/data:/app/output \
+    -e USE_LOCAL_RAG=false \
+    dtor-cli:latest \
+    -m single \
+    -t "why do leaves change color in the fall" \
+    -o /app/output
+```
+
+If Ollama runs on the host, `use host.docker.internal`:
+
+```bash
+docker run --rm \
+    -v /Users/ntebaldi/Documents/ai+science/projects/data/dtor/checkpoints:/app/checkpoints \
+    -v /Users/ntebaldi/Documents/ai+science/projects/data/dtor/data:/app/output \
+    --add-host=host.docker.internal:host-gateway \
+    -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
+    -e USE_LOCAL_RAG=false \
+    dtor-cli:latest \
+    -m single \
+    -t "why do leaves change color in the fall" \
+    -o /app/output
+```
+
+## Docker Compose
+
+1. Build the image: `docker-compose build`
+
+2. Run the reserach task:
+
+```bash
+docker-compose run --rm dtor-cli \
+  -m single \
+  -t "why do leaves change color in the fall" \
+  -o /app/output
+```
