@@ -34,10 +34,6 @@ class Config:
         "help": "String topic of research or a file path to a topic file",
         "short": "t"
     })
-    checkpoint: str = dataclasses.field(default="checkpoint.sqlite", metadata={
-        "help": "Name of checkpoint file to be stored in the research topic directory",
-        "short": "c"
-    })
     mode: str = dataclasses.field(default="single", metadata={
         "help": "Research mode: 'single' for single-path research or 'tree' for Deep Tree of Research",
         "choices": ["single", "tree"],
@@ -56,6 +52,7 @@ class Config:
         "short": "o"
     })
 
+    CHECKPOINT_NAME: typing.ClassVar[str] = "checkpoint.sqlite"
     FINAL_REPORT_NAME: typing.ClassVar[str] = "final_report.md"
     INTERIM_REPORTS_NAME: typing.ClassVar[str] = "interim_reports"
     SOURCES_NAME: typing.ClassVar[str] = "sources.md"
@@ -114,7 +111,7 @@ def load_research_topic(research_topic: str) -> str:
 
 def setup_data(out_dir: pathlib.Path, research_topic: str,
                interim_reports_name: str = Config.INTERIM_REPORTS_NAME,
-               checkpoint_name: str = "checkpoint.sqlite") -> pathlib.Path:
+               checkpoint_name: str = Config.CHECKPOINT_NAME) -> pathlib.Path:
     """Set the output directory for the research."""
     if not out_dir.exists():
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -261,6 +258,66 @@ def write_sources(sources: list, out_dir: pathlib.Path):
 
     logging.info(f"Wrote sources to {report_path}")
 
+def parse_source_strings(source_list: list, skip_no_sources: bool = True) -> list[str]:
+    """Parse a list of multi-line source strings into individual source entries.
+
+    Each item in source_list is a multi-line string containing multiple sources
+    separated by newlines. This function splits them into individual sources.
+
+    Args:
+        source_list: List of multi-line source strings (e.g., ["* Source 1\\n* Source 2"])
+        skip_no_sources: If True, skip entries containing "No sources found"
+
+    Returns:
+        List of individual source strings, with empty lines filtered out
+    """
+    parsed_sources = []
+    for source_str in source_list:
+        if skip_no_sources and 'No sources found' in source_str:
+            continue
+
+        # Split the multi-line string into individual sources
+        for line in source_str.split('\n'):
+            stripped_line = line.strip()
+            if stripped_line:  # Only add non-empty lines
+                parsed_sources.append(stripped_line)
+
+    return parsed_sources
+
+
+def extract_sources_from_update(update: dict) -> list[str]:
+    """Extract and parse all sources from a graph update.
+
+    Collects sources from web_research, complementary_web_research, and
+    local_rag_research nodes, parsing multi-line source strings into
+    individual source entries.
+
+    Args:
+        update: Graph update dictionary from app.stream()
+
+    Returns:
+        List of individual source strings
+    """
+    sources = []
+
+    # Extract web research sources
+    web_sources = update.get("web_research", {}).get("sources_gathered", [])
+    if web_sources:
+        sources.extend(parse_source_strings(web_sources, skip_no_sources=True))
+
+    # Extract complementary web research sources
+    complementary_sources = update.get("complementary_web_research", {}).get("complementary_sources_gathered", [])
+    if complementary_sources:
+        sources.extend(parse_source_strings(complementary_sources, skip_no_sources=False))
+
+    # Extract local RAG research sources
+    local_sources = update.get("local_rag_research", {}).get("local_sources_gathered", [])
+    if local_sources:
+        sources.extend(parse_source_strings(local_sources, skip_no_sources=True))
+
+    return sources
+
+
 def run_single_mode(research_topic: str, research_topic_dir: pathlib.Path,
                     checkpoint: str = "checkpoint.sqlite", resume: bool = True,
                     recursion_limit: int = 500):
@@ -268,12 +325,12 @@ def run_single_mode(research_topic: str, research_topic_dir: pathlib.Path,
 
     Args:
         research_topic: The research topic to investigate
-        cfg: Configuration object
         research_topic_dir: Output directory for reports
+        checkpoint: Path to checkpoint SQLite database
         resume: If True, resume from checkpoint if available. If False, start fresh.
+        recursion_limit: Maximum recursion depth for the graph
     """
-    # FIX: Use cfg.checkpoint instead of cfg.research_topic
-    with SqliteSaver.from_conn_string(str(checkpoint)) as checkpointer:
+    with SqliteSaver.from_conn_string(checkpoint) as checkpointer:
 
         app = create_single_research_graph(checkpointer=checkpointer)
 
@@ -306,7 +363,6 @@ def run_single_mode(research_topic: str, research_topic_dir: pathlib.Path,
 
         sources = []
         # LangGraph automatically saves state to SQLite after each node execution
-        # This happens inside app.stream() - you don't need to call anything manually
         for update in app.stream(
             input_state,
             config=research_config,
@@ -322,19 +378,8 @@ def run_single_mode(research_topic: str, research_topic_dir: pathlib.Path,
                 if final_update.get("running_summary"):
                     write_final_report({"final_summary": final_update.get("running_summary")}, research_topic_dir, research_topic)
 
-            # Collect sources from various nodes
-            if update.get("web_research") or update.get("complementary_web_research") or update.get("local_rag_research"):
-                web_sources = update.get("web_research", {}).get("sources_gathered", [])
-                if web_sources and 'No sources found' not in web_sources:
-                    sources.extend(web_sources)
-
-                complementary_sources = update.get("complementary_web_research", {}).get("complementary_sources_gathered", [])
-                if complementary_sources:
-                    sources.extend(complementary_sources)
-
-                local_sources = update.get("local_rag_research", {}).get("local_sources_gathered", [])
-                if local_sources and 'No sources found' not in local_sources:
-                    sources.extend(local_sources)
+            # Collect sources from various nodes using helper function
+            sources.extend(extract_sources_from_update(update))
 
         # Write sources at the end
         if sources:
