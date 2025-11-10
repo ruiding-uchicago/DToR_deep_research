@@ -492,3 +492,39 @@ User: Research quantum computing applications in dtor mode
 
 1. [Source citations...]
 ```
+
+# Docker Image
+
+## Usage:
+
+1. Build and start services: `docker-compose up --build`
+
+Access the UIs:
+Chainlit: http://localhost:8000
+Phoenix: http://localhost:6006
+
+2. Environment variables - Create a .env file in the project root:
+
+```bash
+# .env
+PHOENIX_ENABLED=true
+OLLAMA_BASE_URL=http://host.docker.internal:11434
+USE_LOCAL_RAG=false
+LLM_PROVIDER=ollama
+LOCAL_LLM=gpt-oss:20b
+```
+
+3. (Optional) Run in detached mode: `docker-compose up -d`
+
+4 View logs:
+
+```bash
+# All services
+docker-compose logs -f
+
+# Specific service
+docker-compose logs -f chainlit
+docker-compose logs -f phoenix
+```
+
+5. Stop services: `docker-compose down`
