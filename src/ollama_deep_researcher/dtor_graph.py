@@ -164,7 +164,7 @@ def single_path_research(state: DToRStateInput, config: RunnableConfig = None) -
     
     # Convert to DToR output format
     return DToRStateOutput(
-        final_summary=result.running_summary,
+        final_summary=result.get('running_summary', ''),
         all_sources=[]  # Sources are included in the summary
     )
 
