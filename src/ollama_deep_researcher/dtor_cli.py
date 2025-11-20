@@ -17,7 +17,8 @@ if str(src_dir) not in sys.path:
 
 # Application imports
 from ollama_deep_researcher.graph import create_single_research_graph
-from ollama_deep_researcher.configuration import Configuration
+from ollama_deep_researcher.dtor_graph import create_main_graph
+from ollama_deep_researcher.dtor_state import DToRStateInput
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.sqlite import SqliteSaver
 
@@ -318,12 +319,13 @@ def extract_sources_from_update(update: dict) -> list[str]:
     return sources
 
 
-def run_single_mode(research_topic: str, research_topic_dir: pathlib.Path,
+def run_research_mode(mode: str, research_topic: str, research_topic_dir: pathlib.Path,
                     checkpoint: str = "checkpoint.sqlite", resume: bool = True,
                     recursion_limit: int = 500):
-    """Run the single-path research mode.
+    """Run the research mode (single or DToR).
 
     Args:
+        mode: The research mode (single or DToR)
         research_topic: The research topic to investigate
         research_topic_dir: Output directory for reports
         checkpoint: Path to checkpoint SQLite database
@@ -332,7 +334,7 @@ def run_single_mode(research_topic: str, research_topic_dir: pathlib.Path,
     """
     with SqliteSaver.from_conn_string(checkpoint) as checkpointer:
 
-        app = create_single_research_graph(checkpointer=checkpointer)
+        app = create_main_graph(checkpointer=checkpointer)
 
         use_local_rag = os.getenv("USE_LOCAL_RAG", "false").lower() == "true"
 
@@ -359,7 +361,7 @@ def run_single_mode(research_topic: str, research_topic_dir: pathlib.Path,
             if checkpoint_state and not resume:
                 logging.info("Checkpoint exists but --no-resume flag set. Starting fresh.")
             logging.info("Starting new research session...")
-            input_state = {"research_topic": research_topic.strip()}
+            input_state = DToRStateInput(research_topic=research_topic, mode=mode)
 
         sources = []
         # LangGraph automatically saves state to SQLite after each node execution
@@ -388,18 +390,14 @@ def run_single_mode(research_topic: str, research_topic_dir: pathlib.Path,
 
         logging.info("Research session completed. Checkpoint saved.")
 
-def run_tree_mode(cfg: Config):
-    logging.info("Running in tree mode")
-    pass
-
 def main():
     cfg = get_args()
     research_topic = load_research_topic(cfg.research_topic)
     research_topic_dir, checkpoint = setup_data(cfg.out_dir, cfg.research_topic)
     if cfg.mode == "single":
-        run_single_mode(research_topic, research_topic_dir, checkpoint, cfg.no_resume, cfg.recursion_limit)
+        run_research_mode(mode="single", research_topic=research_topic, research_topic_dir=research_topic_dir, checkpoint=checkpoint, resume=cfg.no_resume, recursion_limit=cfg.recursion_limit)
     elif cfg.mode == "tree":
-        run_tree_mode(cfg)
+        run_research_mode(mode="dtor", research_topic=research_topic, research_topic_dir=research_topic_dir, checkpoint=checkpoint, resume=cfg.no_resume, recursion_limit=cfg.recursion_limit)
     else:
         logging.error(f"Invalid mode specified: {cfg.mode}. Must be 'single' or 'tree'")
         sys.exit(1)
