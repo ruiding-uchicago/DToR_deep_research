@@ -36,3 +36,6 @@ code_revision_inputs/
 # Misc
 recursion_limit.txt
 working_versions.txt
+
+# MyST build outputs
+_build

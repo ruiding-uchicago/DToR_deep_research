@@ -2,6 +2,8 @@ import json
 import os
 import random
 import re
+
+from typing import Optional
 from typing_extensions import Literal
 
 def clean_code_blocks(content: str) -> str:
@@ -11,25 +13,25 @@ def clean_code_blocks(content: str) -> str:
     """
     if not content or not isinstance(content, str):
         return content
-    
+
     # 清理开头的各种代码块标记
     patterns_to_remove = [
         r'```+(?:json|javascript|js|txt|text|plaintext)?\s*',  # 标准格式
         r'````+(?:json|javascript|js|txt|text|plaintext)?\s*', # 多反引号
         r'`````+(?:json|javascript|js|txt|text|plaintext)?\s*' # 更多反引号
     ]
-    
+
     for pattern in patterns_to_remove:
         content = re.sub(pattern, '', content, flags=re.IGNORECASE)
-    
+
     # 清理结尾的反引号（各种数量）
     content = re.sub(r'```+\s*$', '', content, flags=re.MULTILINE)
-    content = re.sub(r'````+\s*$', '', content, flags=re.MULTILINE)  
+    content = re.sub(r'````+\s*$', '', content, flags=re.MULTILINE)
     content = re.sub(r'`````+\s*$', '', content, flags=re.MULTILINE)
-    
+
     # 清理中间独立的反引号行
     content = re.sub(r'^\s*```+\s*$', '', content, flags=re.MULTILINE)
-    
+
     return content.strip()
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -107,7 +109,7 @@ def init_session(state: SummaryStateInput, config: RunnableConfig = None) -> Sum
     """Initialize a new research session, including creating fresh log files."""
     # Set up fresh logging for this session
     timestamp = setup_logging()
-    
+
     # Return the input state unchanged
     return state
 
@@ -174,7 +176,7 @@ def generate_query(state: SummaryState, config: RunnableConfig):
 
     # Generate a query
     configurable = Configuration.from_runnable_config(config)
-    
+
     # Attempt to generate the query through the failover helper
     use_json_format = "gpt-oss" not in configurable.local_llm.lower()
     try:
@@ -358,7 +360,7 @@ def local_rag_research(state: SummaryState, config: RunnableConfig):
                 if content:
                     paper_content_parts.append(content)
 
-            # Create one comprehensive Papers modality object  
+            # Create one comprehensive Papers modality object
             if paper_content_parts:
                 combined_paper_content = f"\n=== MODALITY: Academic Papers ===\n" + "\n\n".join(paper_content_parts)
                 all_results.append(combined_paper_content)
@@ -416,14 +418,14 @@ def local_rag_research(state: SummaryState, config: RunnableConfig):
 
 def generate_complementary_query(state: SummaryState, config: RunnableConfig):
     """LangGraph node that generates a complementary search query based on local RAG results.
-    
-    Analyzes local knowledge to create a query that explores a different but related angle 
+
+    Analyzes local knowledge to create a query that explores a different but related angle
     of the research topic, ensuring diverse search results.
-    
+
     Args:
         state: Current graph state containing the original search query and local RAG results
         config: Configuration for the runnable, including LLM provider settings
-        
+
     Returns:
         Dictionary with state update, including complementary_search_query containing the diversified query
     """
@@ -435,7 +437,7 @@ def generate_complementary_query(state: SummaryState, config: RunnableConfig):
         # Return empty result, forcing the system to skip this search
         print("Local RAG disabled or no results, skipping complementary query generation.")
         return {"complementary_search_query": ""}
-        
+
     # Now that we know local_research_results is not empty, we can safely access it
     print(f"use_local_rag: {configurable.use_local_rag}, local_research_results sample exists: True") # Safe to print now
     # Optionally print a sample if needed, checking length first:
@@ -475,7 +477,7 @@ Generate a different but related query that explores a new angle on the research
 
 <FORMAT>
 Format your response as a JSON object with this exact key:
-   - "query": A search query that explores a different angle of the research topic
+- "query": A search query that explores a different angle of the research topic
 </FORMAT>
 
 <EXAMPLE>
@@ -486,7 +488,7 @@ Example output:
 </EXAMPLE>
 
 Provide your response in JSON format:"""
-    
+
     print(f"Using research_topic: {state.research_topic}")
     print(f"Using original_query: {state.search_query}")
     print(f"Local RAG result length: {len(local_rag_result)}")
@@ -536,20 +538,20 @@ Provide your response in JSON format:"""
                 if json_obj[key] and isinstance(json_obj[key], str):
                     print(f"Found query under key '{key}': {json_obj[key]}")
                     return json_obj[key]
-            
+
             # If not found, search recursively in nested objects
             for key, value in json_obj.items():
                 result = find_query_in_json(value)
                 if result:
                     return result
-                    
+
         elif isinstance(json_obj, list):
             # Search in each element of the list
             for item in json_obj:
                 result = find_query_in_json(item)
                 if result:
                     return result
-                    
+
         return None
 
     # Parse the JSON response and get the complementary query
@@ -559,10 +561,10 @@ Provide your response in JSON format:"""
         cleaned_content = clean_code_blocks(content)
         query_data = json.loads(cleaned_content)
         print(f"Full parsed JSON: {query_data}")
-        
+
         # First try the recursive search for any query at any level
         complementary_query = find_query_in_json(query_data)
-        
+
         # If not found through recursive search, try the original method as fallback
         if not complementary_query:
             print("Recursive search failed, trying original method")
@@ -574,23 +576,23 @@ Provide your response in JSON format:"""
                 # Try other possible keys as fallback
                 possible_keys = ['complementary_query', 'search_query', 'follow_up_query', 'query_to_search', 'new_query','complementary_query_to_search']
                 complementary_query = ""
-                
+
                 for key in possible_keys:
                     if key in query_data and query_data[key]:
                         complementary_query = query_data[key]
                         print(f"Found query under alternative key '{key}': {complementary_query}")
                         break
-        
+
         # If still empty, try to use the entire content as the query if it looks like plain text
         if not complementary_query and not content.startswith('{') and not content.startswith('['):
             print("Using raw content as query")
             complementary_query = content.strip()
-        
+
         # Last resort fallback
         if not complementary_query:
             print("Empty complementary query generated, using fallback")
             complementary_query = f"Alternative aspects of {state.research_topic}"
-            
+
         print(f"Final complementary query: '{complementary_query}'")
 
         # Ensure state.search_query is a string before comparison
@@ -604,7 +606,7 @@ Provide your response in JSON format:"""
         # Check if the complementary query is too similar to the original query
         if complementary_query.lower().strip() == state.search_query.lower().strip():
             print("Warning: Complementary query is identical to original query. Trying backup approach...")
-            
+
             # Direct backup approach without using local RAG content
             backup_prompt = f"""Generate a complementary search query for the research topic.
 
@@ -643,7 +645,7 @@ Provide only the JSON response:"""
 
                 backup_content = backup_result.content
                 print(f"Backup approach result: {backup_content[:300]}...")
-                
+
                 try:
                     cleaned_backup = clean_code_blocks(backup_content)
                     backup_data = json.loads(cleaned_backup)
@@ -661,7 +663,7 @@ Provide only the JSON response:"""
                         fallback_queries = [f"Criticisms and limitations of {state.research_topic}", f"Alternative perspectives on {state.research_topic}", f"Different angles on {state.research_topic}", f"New perspectives on {state.research_topic}", f"Complementary approaches to {state.research_topic}"]
                         print("Backup approach failed or returned same query, using template fallback")
                         return {"complementary_search_query": random.choice(fallback_queries)}
-                        
+
                 except (json.JSONDecodeError, KeyError):
                     # If JSON parsing fails, use raw content if it doesn't look like JSON
                     if not backup_content.startswith('{') and not backup_content.startswith('['):
@@ -671,32 +673,32 @@ Provide only the JSON response:"""
 
                         if backup_content.lower().strip() != state.search_query.lower().strip():
                             return {"complementary_search_query": backup_content.strip()}
-                    
+
                     # Last resort template fallback, randomly pick one from the list
                     fallback_queries = [f"Alternative approaches to {state.research_topic}", f"Different approaches to {state.research_topic}", f"New approaches to {state.research_topic}", f"Complementary approaches to {state.research_topic}"]
                     return {"complementary_search_query": random.choice(fallback_queries)}
-                    
+
             except Exception as e:
                 print(f"Error during backup LLM invocation: {e}")
                 # Last resort template fallback, randomly pick one from the list
                 fallback_queries = [f"Disadvantages and limitations of {state.research_topic}", f"Criticisms and limitations of {state.research_topic}", f"Alternative perspectives on {state.research_topic}", f"Different angles on {state.research_topic}", f"New perspectives on {state.research_topic}", f"Complementary approaches to {state.research_topic}"]
                 return {"complementary_search_query": random.choice(fallback_queries)}
-        
+
         return {"complementary_search_query": complementary_query}
     except (json.JSONDecodeError, KeyError) as e:
         # If parsing fails, return empty query instead of using a fallback
         print(f"JSON parsing failed with error: {e}")
         print(f"Raw content: {content[:200]}...")
-        
+
         # Try to use the raw content if it's not JSON
         if not content.startswith('{') and not content.startswith('['):
             print("Using raw content as query since it's not JSON")
             return {"complementary_search_query": content.strip()}
-            
+
         if configurable.strip_thinking_tokens:
             content = strip_thinking_tokens(content)
             print(f"After stripping tokens: {content[:200]}...")
-            
+
         print("All attempts failed - returning fallback query")
         # Last resort template fallback, randomly pick one from the list
         fallback_queries = [f"Different perspectives on {state.research_topic}", f"Alternative perspectives on {state.research_topic}", f"Different angles on {state.research_topic}", f"New perspectives on {state.research_topic}", f"Complementary approaches to {state.research_topic}"]
@@ -704,14 +706,14 @@ Provide only the JSON response:"""
 
 def web_research(state: SummaryState, config: RunnableConfig):
     """LangGraph node that performs web research using the generated search query.
-    
-    Executes a web search using the configured search API (tavily, perplexity, 
+
+    Executes a web search using the configured search API (tavily, perplexity,
     duckduckgo, or searxng) and formats the results for further processing.
-    
+
     Args:
         state: Current graph state containing the search query and research loop count
         config: Configuration for the runnable, including search API settings
-        
+
     Returns:
         Dictionary with state update, including sources_gathered, research_loop_count, and web_research_results
     """
@@ -740,7 +742,7 @@ def web_research(state: SummaryState, config: RunnableConfig):
 
     # Search the web
     print(f"[DEBUG] web_research: Using search API '{search_api}' with query: '{search_query}'")
-    
+
     if search_api == "tavily":
         search_results = tavily_search(search_query, fetch_full_page=configurable.fetch_full_page, max_results=3)
         print(f"[DEBUG] web_research: Tavily returned {len(search_results.get('results', []))} results")
@@ -770,27 +772,27 @@ def web_research(state: SummaryState, config: RunnableConfig):
         search_str = deduplicate_and_format_sources(search_results, max_tokens_per_source=2500, fetch_full_page=configurable.fetch_full_page)
     else:
         raise ValueError(f"Unsupported search API: {configurable.search_api}")
-    
+
     print(f"[DEBUG] web_research: Final search_str length: {len(search_str)} chars")
     print(f"[DEBUG] web_research: search_str preview: '{search_str[:100]}...'")
-    
+
     sources_formatted = format_sources(search_results)
     print(f"[DEBUG] web_research: sources_formatted: '{sources_formatted[:100]}...'")
-    
+
     result = {"sources_gathered": [sources_formatted], "research_loop_count": state.research_loop_count + 1, "web_research_results": [search_str]}
     print(f"[DEBUG] web_research: Returning result with web_research_results length: {len(result['web_research_results'][0])}")
     return result
 
 def complementary_web_research(state: SummaryState, config: RunnableConfig):
     """LangGraph node that performs web research using the complementary search query.
-    
+
     Similar to the web_research node but uses the complementary search query that explores
     a different but related angle of the research topic.
-    
+
     Args:
         state: Current graph state containing the complementary search query
         config: Configuration for the runnable, including search API settings
-        
+
     Returns:
         Dictionary with state update, including complementary_sources_gathered and complementary_web_research_results
     """
@@ -814,7 +816,7 @@ def complementary_web_research(state: SummaryState, config: RunnableConfig):
 
     # Search the web with complementary query
     print(f"[DEBUG] complementary_web_research: Using search API '{search_api}' with query: '{state.complementary_search_query}'")
-    
+
     if search_api == "tavily":
         search_results = tavily_search(state.complementary_search_query, fetch_full_page=configurable.fetch_full_page, max_results=1)
         print(f"[DEBUG] complementary_web_research: Tavily returned {len(search_results.get('results', []))} results")
@@ -844,15 +846,15 @@ def complementary_web_research(state: SummaryState, config: RunnableConfig):
         search_str = deduplicate_and_format_sources(search_results, max_tokens_per_source=2500, fetch_full_page=configurable.fetch_full_page)
     else:
         raise ValueError(f"Unsupported search API: {configurable.search_api}")
-    
+
     print(f"[DEBUG] complementary_web_research: Final search_str length: {len(search_str)} chars")
     print(f"[DEBUG] complementary_web_research: search_str preview: '{search_str[:100]}...'")
-    
+
     sources_formatted = format_sources(search_results)
     print(f"[DEBUG] complementary_web_research: sources_formatted: '{sources_formatted[:100]}...'")
-    
+
     result = {
-        "complementary_sources_gathered": [sources_formatted], 
+        "complementary_sources_gathered": [sources_formatted],
         "complementary_web_research_results": [search_str]
     }
     print(f"[DEBUG] complementary_web_research: Returning result with complementary_web_research_results length: {len(result['complementary_web_research_results'][0])}")
@@ -860,15 +862,15 @@ def complementary_web_research(state: SummaryState, config: RunnableConfig):
 
 def summarize_sources(state: SummaryState, config: RunnableConfig):
     """LangGraph node that summarizes research results from both local and web sources.
-    
-    Uses an LLM to create or update a running summary based on the newest research 
+
+    Uses an LLM to create or update a running summary based on the newest research
     results, integrating them with any existing summary.
-    
+
     Args:
         state: Current graph state containing research topic, running summary,
-              and research results from both local and web sources
+            and research results from both local and web sources
         config: Configuration for the runnable, including LLM provider settings
-        
+
     Returns:
         Dictionary with state update, including running_summary key containing the updated summary
     """
@@ -878,17 +880,17 @@ def summarize_sources(state: SummaryState, config: RunnableConfig):
 
     # Get the most recent research results
     research_content = ""
-    
+
     # Add local research results if available (ALL results, not just the last one)
     if state.local_research_results and len(state.local_research_results) > 0:
         all_local_results = "\n\n".join(state.local_research_results)
         research_content += f"<Local Research Results>\n{all_local_results}\n</Local Research Results>\n\n"
-    
+
     # Add web research results from original query if available (ALL results)
     if state.web_research_results and len(state.web_research_results) > 0:
         all_web_results = "\n\n".join(state.web_research_results)
         research_content += f"<Main Research Results>\n{all_web_results}\n</Main Research Results>\n\n"
-    
+
     # Add complementary web research results if available (ALL results)
     if state.complementary_web_research_results and len(state.complementary_web_research_results) > 0:
         all_complementary_results = "\n\n".join(state.complementary_web_research_results)
@@ -926,7 +928,7 @@ def summarize_sources(state: SummaryState, config: RunnableConfig):
 
     if configurable.strip_thinking_tokens:
         running_summary = strip_thinking_tokens(running_summary)
-    
+
     # Add current summary to summary_history
     # Create an object with metadata about this summary iteration
     iteration_summary = {
@@ -935,7 +937,7 @@ def summarize_sources(state: SummaryState, config: RunnableConfig):
         "query": state.search_query,
         "complementary_query": state.complementary_search_query if state.complementary_search_query else ""
     }
-    
+
     # Return updated state with the new summary and updated history
     return {
         "running_summary": running_summary,
@@ -944,15 +946,15 @@ def summarize_sources(state: SummaryState, config: RunnableConfig):
 
 def reflect_on_summary(state: SummaryState, config: RunnableConfig):
     """LangGraph node that identifies knowledge gaps and generates follow-up queries.
-    
+
     Analyzes the current summary to identify areas for further research and generates
     a new search query to address those gaps. Uses structured output to extract
     the follow-up query in JSON format.
-    
+
     Args:
         state: Current graph state containing the running summary and research topic
         config: Configuration for the runnable, including LLM provider settings
-        
+
     Returns:
         Dictionary with state update, including search_query key containing the generated follow-up query
     """
@@ -962,14 +964,14 @@ def reflect_on_summary(state: SummaryState, config: RunnableConfig):
     reflect_logger.info(f"Research topic: {state.research_topic}")
     reflect_logger.info(f"Research loop count: {state.research_loop_count}")
     reflect_logger.info(f"Summary length: {len(state.running_summary) if state.running_summary else 0} chars")
-    
+
     # Generate a query
     configurable = Configuration.from_runnable_config(config)
-    
+
     # Choose the appropriate LLM based on the provider
     # Check if using gpt-oss model which doesn't handle format="json" well
     use_json_format = "gpt-oss" not in configurable.local_llm.lower()
-    
+
     # Check if FET data and use appropriate reflection prompt
     is_fet = detect_fet_query(state, config) and FET_REFLECTION_PROMPT is not None
 
@@ -1021,16 +1023,16 @@ def reflect_on_summary(state: SummaryState, config: RunnableConfig):
         # Get the follow-up query
         query = reflection_content.get('follow_up_query')
         knowledge_gap = reflection_content.get('knowledge_gap', 'No knowledge gap specified')
-        
+
         reflect_logger.info(f"Knowledge gap identified: {knowledge_gap}")
-        
+
         # Check if query is None or empty
         if not query:
             # Use a fallback query, randomly pick one from the list
             fallback_queries = [f"Tell me more about {state.research_topic}", f"What are the latest trends in {state.research_topic}?", f"What are the latest developments in {state.research_topic}?", f"What are the latest advancements in {state.research_topic}?", f"What are the latest innovations in {state.research_topic}?", f"What are the latest breakthroughs in {state.research_topic}?"]
             query = random.choice(fallback_queries)
             reflect_logger.info(f"Using fallback query: {query}")
-            
+
         reflect_logger.info(f"Generated follow-up query: {query}")
         reflect_logger.info("===== REFLECTION COMPLETE =====")
         return {"search_query": query}
@@ -1042,14 +1044,14 @@ def reflect_on_summary(state: SummaryState, config: RunnableConfig):
             content = strip_thinking_tokens(content)
         # Try to extract a clean query from content
         query = content.strip().split('\n')[0].strip() if content.strip() else ""
-        
+
         # Check if query is None or empty
         if not query:
             # Use a fallback query, randomly pick one from the list
             fallback_queries = [f"Tell me more about {state.research_topic}", f"What are the latest trends in {state.research_topic}?", f"What are the latest developments in {state.research_topic}?", f"What are the latest advancements in {state.research_topic}?", f"What are the latest innovations in {state.research_topic}?", f"What are the latest breakthroughs in {state.research_topic}?", f"What are the latest advancements in {state.research_topic}?", f"What are the latest innovations in {state.research_topic}?", f"What are the latest breakthroughs in {state.research_topic}?"]
             query = random.choice(fallback_queries)
             reflect_logger.info(f"Using fallback query: {query}")
-        
+
         reflect_logger.info(f"Generated follow-up query: {query}")
         reflect_logger.info("===== REFLECTION COMPLETE =====")
         return {"search_query": query}
@@ -1061,24 +1063,24 @@ def reflect_on_summary(state: SummaryState, config: RunnableConfig):
         reflect_logger.info(f"Using fallback query: {query}")
         reflect_logger.info("===== REFLECTION COMPLETE =====")
         return {"search_query": query}
-        
+
 def finalize_summary(state: SummaryState, config: RunnableConfig):
     """LangGraph node that finalizes the research summary.
-    
-    Uses an LLM to create a comprehensive final summary by analyzing multiple iterations 
-    of research summaries. Then combines this with deduplicated sources to create a 
+
+    Uses an LLM to create a comprehensive final summary by analyzing multiple iterations
+    of research summaries. Then combines this with deduplicated sources to create a
     well-structured research report with proper citations.
-    
+
     Args:
         state: Current graph state containing the running summary, summary history, and sources gathered
         config: Configuration for the runnable, including LLM provider settings
-        
+
     Returns:
         Dictionary with state update, including running_summary key containing the formatted final summary with sources
     """
     # Configure LLM
     configurable = Configuration.from_runnable_config(config)
-    
+
     # Log the input state
     finalize_logger.info(f"===== FINALIZING SUMMARY - INPUT STATE =====")
     finalize_logger.info(f"Research topic: {state.research_topic}")
@@ -1087,15 +1089,15 @@ def finalize_summary(state: SummaryState, config: RunnableConfig):
     finalize_logger.info(f"Sources gathered: {len(state.sources_gathered) if state.sources_gathered else 0}")
     finalize_logger.info(f"Complementary sources: {len(state.complementary_sources_gathered) if state.complementary_sources_gathered else 0}")
     finalize_logger.info(f"Local sources: {len(state.local_sources_gathered) if state.local_sources_gathered else 0}")
-    
+
     # Determine if we're in DToR mode - in DToR mode, we don't include sources in each individual research node
     is_dtor_mode = getattr(configurable, 'research_mode', 'single') == 'dtor'
     finalize_logger.info(f"Research mode: {'DToR' if is_dtor_mode else 'Single'}")
-    
+
     # Process summary history for use in the final synthesis
     # If we have summary history, we'll use that; otherwise we'll use the running_summary
     summary_history_text = ""
-    
+
     if state.summary_history and len(state.summary_history) > 0:
         # We have summary history, format it for the LLM
         finalize_logger.info("Formatting summary history for final synthesis")
@@ -1109,7 +1111,7 @@ def finalize_summary(state: SummaryState, config: RunnableConfig):
         # No history available, just use the current summary
         finalize_logger.info("No summary history available, using current running summary")
         summary_history_text = f"Only one research iteration was performed. Summary:\n{state.running_summary}"
-    
+
     # Check if FET data and build appropriate prompt
     is_fet = detect_fet_query(state, config) and FET_FINAL_SUMMARY_PROMPT is not None
     current_date = get_current_date()
@@ -1153,7 +1155,7 @@ def finalize_summary(state: SummaryState, config: RunnableConfig):
     8. ALWAYS provide a complete summary, even if complex. If you're thinking through the process, make sure to finish with your final report.
     </INSTRUCTIONS>
     """
-    
+
     # Get the final summary from the LLM
     finalize_logger.info("===== STEP 1: GENERATING FINAL RESEARCH REPORT =====")
     finalize_logger.info("Invoking LLM to synthesize research findings...")
@@ -1177,20 +1179,20 @@ def finalize_summary(state: SummaryState, config: RunnableConfig):
             "The following consolidated research history is provided instead:\n\n"
             f"{summary_history_text}"
         )
-    
+
     # In DToR mode, we don't include sources in the final summary of individual research nodes
     # as sources will be managed at the DToR level (synthesize_final_report)
     if is_dtor_mode:
         # Don't include sources in DToR mode
         finalize_logger.info("DToR mode detected, not including sources in final summary")
         return {"running_summary": final_content}
-    
+
     # For single mode, continue with the original source processing
     # Deduplicate sources before joining
     finalize_logger.info("Processing and deduplicating sources...")
     seen_sources = set()
     unique_sources = []
-    
+
     # Process web sources from original query
     for source in state.sources_gathered:
         # Split the source into lines and process each individually
@@ -1199,7 +1201,7 @@ def finalize_summary(state: SummaryState, config: RunnableConfig):
             if line.strip() and line not in seen_sources:
                 seen_sources.add(line)
                 unique_sources.append(line)
-    
+
     # Process web sources from complementary query
     for source in state.complementary_sources_gathered:
         # Split the source into lines and process each individually
@@ -1208,7 +1210,7 @@ def finalize_summary(state: SummaryState, config: RunnableConfig):
             if line.strip() and line not in seen_sources:
                 seen_sources.add(line)
                 unique_sources.append("🔍 " + line)  # Add a magnifying glass emoji to denote complementary search source
-    
+
     # Process local sources with enhanced categorization
     fet_sources = []
     code_sources = []
@@ -1370,46 +1372,46 @@ CRITICAL JSON FORMAT REQUIREMENTS:
 IMPORTANT: Your response must start with {{ and end with }}. Output ONLY the JSON object below with values chosen from the ranges above:
 
 {{
-  "device_architecture": "GFET_on_ITO",
-  "substrate": {{
+"device_architecture": "GFET_on_ITO",
+"substrate": {{
     "type": "ITO_glass",
     "oxide_thickness_nm": 300,
     "preparation": ["solvent_clean", "O2_plasma_60s"]
-  }},
-  "electrode_geometry": {{
+}},
+"electrode_geometry": {{
     "type": "IDE",
     "gap_S_um": 200,
     "finger_width_W_um": 100,
     "material": "Au"
-  }},
-  "inkjet_printing": {{
+}},
+"inkjet_printing": {{
     "graphene_type": "CNC_graphene",
     "drop_spacing_um": 25,
     "coats_passes": 7,
     "stage_temperature_C": 60,
     "cartridge_volume_pL": 10
-  }},
-  "thermal_processing": {{
+}},
+"thermal_processing": {{
     "anneal_temperature_C": 250,
     "anneal_time_min": 30,
     "atmosphere": "air"
-  }},
-  "surface_functionalization": {{
+}},
+"surface_functionalization": {{
     "enabled": true,
     "treatments": [
-      {{
+    {{
         "chemical": "PBASE",
         "concentration": "10mg/mL_in_DMF",
         "incubation_time_min": 90
-      }}
+    }}
     ]
-  }},
-  "measurement_parameters": {{
+}},
+"measurement_parameters": {{
     "gate_sweep_cycles": 50,
     "V_D_mV": 100,
     "V_G_range_V": "0-0.5",
     "reference_electrode": "Ag/AgCl"
-  }}
+}}
 }}"""
 
             finalize_logger.info("===== STEP 2: REMOTE PRINTING PARAMETER GENERATION =====")
@@ -1482,23 +1484,23 @@ IMPORTANT: Your response must start with {{ and end with }}. Output ONLY the JSO
 
 def summarize_local_rag_results(state: SummaryState, config: RunnableConfig):
     """LangGraph node that summarizes local RAG results before generating a complementary query.
-    
+
     Creates a concise summary of the local RAG results to help with generating
     a more focused complementary query.
-    
+
     Args:
         state: Current graph state containing the local RAG results
         config: Configuration for the runnable, including LLM provider settings
-        
+
     Returns:
         Dictionary with state update, including local_rag_summary key
     """
     # If local RAG is disabled or no results, return empty summary
     configurable = Configuration.from_runnable_config(config)
-    
+
     if not configurable.use_local_rag or not state.local_research_results:
         return {"local_rag_summary": ""}
-    
+
     # Use all local RAG results
     local_rag_result = "\n\n".join(state.local_research_results) if state.local_research_results else ""
 
@@ -1533,7 +1535,7 @@ def summarize_local_rag_results(state: SummaryState, config: RunnableConfig):
     5. Always provide a complete summary, even if thinking through a complex process.
     </INSTRUCTIONS>
     """
-    
+
     try:
         result = invoke_with_failover(
             configurable,
@@ -1554,14 +1556,14 @@ def summarize_local_rag_results(state: SummaryState, config: RunnableConfig):
 
 def route_research(state: SummaryState, config: RunnableConfig) -> Literal["finalize_summary", "local_rag_research"]:
     """LangGraph routing function that determines the next step in the research flow.
-    
+
     Controls the research loop by deciding whether to continue gathering information
     or to finalize the summary based on the configured maximum number of research loops.
-    
+
     Args:
         state: Current graph state containing the research loop count
         config: Configuration for the runnable, including max_web_research_loops setting
-        
+
     Returns:
         String literal indicating the next node to visit ("local_rag_research" or "finalize_summary")
     """
@@ -1572,34 +1574,41 @@ def route_research(state: SummaryState, config: RunnableConfig) -> Literal["fina
     else:
         return "finalize_summary"
 
-# Add nodes and edges
-builder = StateGraph(SummaryState, input=SummaryStateInput, output=SummaryStateOutput, config_schema=Configuration)
+def create_single_research_graph(checkpointer: Optional[object] = None):
+    """Create single-path research graph."""
 
-# Add the initialization node
-builder.add_node("init_session", init_session)
-builder.add_node("generate_query", generate_query)
-builder.add_node("local_rag_research", local_rag_research)
-builder.add_node("summarize_local_rag_results", summarize_local_rag_results)
-builder.add_node("generate_complementary_query", generate_complementary_query)
-builder.add_node("web_research", web_research)
-builder.add_node("complementary_web_research", complementary_web_research)
-builder.add_node("summarize_sources", summarize_sources)
-builder.add_node("reflect_on_summary", reflect_on_summary)
-builder.add_node("finalize_summary", finalize_summary)
+    # Add nodes and edges
+    builder = StateGraph(SummaryState, input=SummaryStateInput, output=SummaryStateOutput, config_schema=Configuration)
 
-# Add edges
-builder.add_edge(START, "init_session")
-builder.add_edge("init_session", "generate_query")
-builder.add_edge("generate_query", "local_rag_research")
-builder.add_edge("local_rag_research", "summarize_local_rag_results")
-builder.add_edge("summarize_local_rag_results", "generate_complementary_query")
-builder.add_edge("generate_complementary_query", "web_research")
-builder.add_edge("web_research", "complementary_web_research")
-builder.add_edge("complementary_web_research", "summarize_sources")
-builder.add_edge("summarize_sources", "reflect_on_summary")
-builder.add_conditional_edges("reflect_on_summary", route_research)
-builder.add_edge("finalize_summary", END)
+    # Add the initialization node
+    builder.add_node("init_session", init_session)
+    builder.add_node("generate_query", generate_query)
+    builder.add_node("local_rag_research", local_rag_research)
+    builder.add_node("summarize_local_rag_results", summarize_local_rag_results)
+    builder.add_node("generate_complementary_query", generate_complementary_query)
+    builder.add_node("web_research", web_research)
+    builder.add_node("complementary_web_research", complementary_web_research)
+    builder.add_node("summarize_sources", summarize_sources)
+    builder.add_node("reflect_on_summary", reflect_on_summary)
+    builder.add_node("finalize_summary", finalize_summary)
 
-graph = builder.compile()
+    # Add edges
+    builder.add_edge(START, "init_session")
+    builder.add_edge("init_session", "generate_query")
+    builder.add_edge("generate_query", "local_rag_research")
+    builder.add_edge("local_rag_research", "summarize_local_rag_results")
+    builder.add_edge("summarize_local_rag_results", "generate_complementary_query")
+    builder.add_edge("generate_complementary_query", "web_research")
+    builder.add_edge("web_research", "complementary_web_research")
+    builder.add_edge("complementary_web_research", "summarize_sources")
+    builder.add_edge("summarize_sources", "reflect_on_summary")
+    builder.add_conditional_edges("reflect_on_summary", route_research)
+    builder.add_edge("finalize_summary", END)
+
+    graph = builder.compile(checkpointer=checkpointer)
+    return graph
+
+
+graph = create_single_research_graph()
 # Add step timeout to prevent CancelledError
 graph.step_timeout = 86400  # 24 hours in seconds

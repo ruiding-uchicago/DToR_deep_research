@@ -10,6 +10,55 @@ Local, resilient research assistant built on LangGraph. Install [Ollama](https:/
 - **Headless & production workflows:** CLI with SQLite checkpoints plus cluster-ready orchestration scripts.
 - **Artifact trail:** per-iteration logs, branch syntheses, final reports, and optional FET fabrication parameters.
 
+## Installation 📦
+
+The package uses `pyproject.toml` for dependency management. Install with pip:
+
+### Basic Installation
+
+Install the core package with all required dependencies:
+
+```bash
+pip install -e .
+```
+
+### Optional Dependencies
+
+Install additional features using optional dependency groups:
+
+**UI Integration (Chainlit + Phoenix):**
+```bash
+pip install -e '.[ui]'
+```
+Includes: `chainlit`, `arize-phoenix`, `openinference-instrumentation-langchain`
+
+**FET RAG Support:**
+```bash
+pip install -e '.[fet_rag]'
+```
+Includes: additional vector store dependencies, transformers, numpy, pandas, tqdm
+
+**Development Tools:**
+```bash
+pip install -e '.[dev]'
+```
+Includes: `mypy`, `ruff` for type checking and linting
+
+**Combine Multiple Groups:**
+```bash
+# UI + FET RAG
+pip install -e '.[ui,fet_rag]'
+
+# All optional dependencies
+pip install -e '.[dev,ui,fet_rag]'
+```
+
+### Prerequisites
+
+- **Python 3.9+** (Python 3.11+ recommended)
+- **Ollama** or **LMStudio** (or OpenAI API key) for LLM inference
+- For FET RAG: vector stores configured (see [`docs/MODALITY_RAG.md`](docs/MODALITY_RAG.md))
+
 Documentation lives under [`docs/`](docs). Start with:
 - [`docs/SYSTEM_OVERVIEW.md`](docs/SYSTEM_OVERVIEW.md) – architecture map, modules, state objects, failover behavior.
 - [`docs/RESEARCH_WORKFLOWS.md`](docs/RESEARCH_WORKFLOWS.md) – single-path loop, DToR routing, batching scripts.
@@ -94,3 +143,48 @@ MIT — see [`LICENSE`](LICENSE).
 - Contributions that improve stability, docs, or new modalities are welcome!
 
 <sub><i>This work is partially inspired by <a href="https://github.com/langchain-ai/local-deep-researcher">langchain-ai/local-deep-researcher</a>.</i></sub>
+
+# Docker Image
+
+## Docker
+
+1. Build the image: `docker build -t dtor-cli:latest .`
+
+2. Run the research task:
+
+```bash
+docker run --rm \
+    -v ./output:/app/output \
+    -e USE_LOCAL_RAG=false \
+    dtor-cli:latest \
+    -m single \
+    -t "<your research topic>" \
+    -o /app/output
+```
+
+If Ollama runs on the host, `use host.docker.internal`:
+
+```bash
+docker run --rm \
+    -v ./output:/app/output \
+    --add-host=host.docker.internal:host-gateway \
+    -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
+    -e USE_LOCAL_RAG=false \
+    dtor-cli:latest \
+    -m single \
+    -t "<your research topic>" \
+    -o /app/output
+```
+
+## Docker Compose
+
+1. Build the image: `docker-compose build`
+
+2. Run the reserach task:
+
+```bash
+docker-compose run --rm dtor-cli \
+  -m single \
+  -t "<your research topic>" \
+  -o /app/output
+```
