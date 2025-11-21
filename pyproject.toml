@@ -10,6 +10,7 @@ license = { text = "MIT" }
 requires-python = ">=3.9"
 dependencies = [
     "langgraph==0.3.21",
+    "langgraph-checkpoint-sqlite",
     "langchain-community==0.3.20",
     "langchain-core==0.3.76",
     "langchain-chroma==0.2.6",
@@ -25,11 +26,15 @@ dependencies = [
     "sentence-transformers==4.0.0",
     "chromadb==1.0.21",
     "peft==0.15.1",
-
 ]
 
 [project.optional-dependencies]
 dev = ["mypy==1.11.1", "ruff==0.6.1"]
+ui = [
+    "chainlit>=2.0.0",
+    "arize-phoenix",
+    "openinference-instrumentation-langchain",
+]
 
 [build-system]
 requires = ["setuptools>=73.0.0", "wheel"]
